@@ -42,12 +42,12 @@ const CATEGORY_ALIASES: Record<string, PlaceCategory> = {
 };
 
 const placeSchema = z.object({
-  name: z.string(),
+  name: z.string().min(1),
   description: z.string(),
   address: z.string().optional(),
-  lat: z.coerce.number().optional(),
-  lng: z.coerce.number().optional(),
-  estimatedCost: z.coerce.number().optional(),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  estimatedCost: z.number().optional(),
   category: z.enum([
     "attraction",
     "restaurant",
@@ -58,33 +58,31 @@ const placeSchema = z.object({
 });
 
 const itinerarySchema = z.object({
-  summary: z.string(),
+  summary: z.string().min(1),
   days: z.array(
     z.object({
-      dayNo: z.coerce.number(),
+      dayNo: z.number(),
       title: z.string(),
-      places: z.array(placeSchema),
-      dailyBudget: z.coerce.number(),
-      tips: z.array(z.string()).default([]),
+      places: z.array(placeSchema).min(1),
+      dailyBudget: z.number(),
+      tips: z.array(z.string()),
+    })
+  ).min(1),
+  budget: z.object({
+    accommodation: z.number(),
+    food: z.number(),
+    transport: z.number(),
+    activities: z.number(),
+    shopping: z.number(),
+    contingency: z.number(),
+    total: z.number(),
+  }),
+  checklist: z.array(
+    z.object({
+      category: z.string(),
+      items: z.array(z.string()),
     })
   ),
-  budget: z.object({
-    accommodation: z.coerce.number(),
-    food: z.coerce.number(),
-    transport: z.coerce.number(),
-    activities: z.coerce.number(),
-    shopping: z.coerce.number(),
-    contingency: z.coerce.number(),
-    total: z.coerce.number(),
-  }),
-  checklist: z
-    .array(
-      z.object({
-        category: z.string(),
-        items: z.array(z.string()),
-      })
-    )
-    .default([]),
 });
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -108,6 +106,22 @@ function toNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function toOptionalCoord(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  const parsed = toNumber(value, NaN);
+  if (!Number.isFinite(parsed)) return undefined;
+  if (parsed < -180 || parsed > 180) return undefined;
+  return parsed;
+}
+
+function normalizeTips(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((tip) => toString(tip)).filter(Boolean);
+  }
+  if (value == null) return [];
+  return [toString(value)].filter(Boolean);
+}
+
 function normalizeCategory(value: unknown): PlaceCategory {
   const raw = toString(value, "attraction").toLowerCase();
   if (CATEGORY_ALIASES[raw]) return CATEGORY_ALIASES[raw];
@@ -129,8 +143,8 @@ function normalizePlace(raw: unknown) {
       "추천 장소입니다."
     ),
     address: toString(place.address ?? place.location, "") || undefined,
-    lat: place.lat != null ? toNumber(place.lat) : undefined,
-    lng: place.lng != null ? toNumber(place.lng ?? place.lon) : undefined,
+    lat: toOptionalCoord(place.lat),
+    lng: toOptionalCoord(place.lng ?? place.lon),
     estimatedCost:
       place.estimatedCost != null
         ? toNumber(place.estimatedCost ?? place.cost ?? place.price)
@@ -148,7 +162,7 @@ function normalizeDay(raw: unknown, index: number) {
     title: toString(day.title ?? day.name ?? day.theme, `Day ${index + 1}`),
     places: places.length > 0 ? places.map(normalizePlace) : [normalizePlace({})],
     dailyBudget: toNumber(day.dailyBudget ?? day.daily_budget ?? day.budget),
-    tips: asArray(day.tips ?? day.notes).map((tip) => toString(tip)).filter(Boolean),
+    tips: normalizeTips(day.tips ?? day.notes),
   };
 }
 
@@ -171,13 +185,26 @@ function normalizeBudget(raw: unknown, totalBudget: number) {
 }
 
 function normalizeChecklist(raw: unknown) {
-  return asArray(raw).map((item) => {
+  const entries = asArray(raw);
+  if (entries.length === 0) {
+    return [{ category: "준비물", items: ["신분증", "여행자보험"] }];
+  }
+
+  return entries.map((item) => {
+    if (typeof item === "string") {
+      return { category: "준비물", items: [item] };
+    }
+
     const entry = asRecord(item) ?? {};
+    const items = asArray(entry.items ?? entry.list);
+    const normalizedItems =
+      items.length > 0
+        ? items.map((value) => toString(value)).filter(Boolean)
+        : [toString(entry.item ?? entry.name, "여행 필수품")].filter(Boolean);
+
     return {
       category: toString(entry.category ?? entry.title, "준비물"),
-      items: asArray(entry.items ?? entry.list)
-        .map((value) => toString(value))
-        .filter(Boolean),
+      items: normalizedItems,
     };
   });
 }
@@ -199,13 +226,16 @@ export function extractJson(text: string): string {
 function repairJsonText(text: string): string {
   return text
     .replace(/^\uFEFF/, "")
+    .replace(/:\s*undefined/g, ": null")
+    .replace(/:\s*NaN/g, ": 0")
     .replace(/,\s*\.\.\.\s*,/g, ",")
     .replace(/,\s*\.\.\./g, "")
     .replace(/\[\s*\.\.\.\s*\]/g, "[]")
     .replace(/\.\.\./g, "")
     .replace(/,\s*([}\]])/g, "$1")
     .replace(/([{,]\s*)'([^']+)'(\s*:)/g, '$1"$2"$3')
-    .replace(/:\s*'([^']*)'/g, ': "$1"');
+    .replace(/:\s*'([^']*)'/g, ': "$1"')
+    .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
 }
 
 function closeTruncatedJson(text: string): string {
@@ -253,8 +283,9 @@ export function parseAiJson(content: string): unknown {
 
 export function normalizeItinerary(
   raw: unknown,
-  totalBudget: number
-): Record<string, unknown> {
+  totalBudget: number,
+  expectedDays?: number
+): GeneratedItinerary {
   const root = asRecord(raw) ?? {};
   const payload =
     asRecord(root.itinerary) ??
@@ -265,32 +296,45 @@ export function normalizeItinerary(
   const days = asArray(payload.days ?? payload.dayPlans ?? payload.schedule);
   const budget = normalizeBudget(payload.budget ?? payload.budgetBreakdown, totalBudget);
 
-  return {
+  let normalizedDays =
+    days.length > 0 ? days.map(normalizeDay) : [normalizeDay({}, 0)];
+
+  if (expectedDays && expectedDays > 0) {
+    while (normalizedDays.length < expectedDays) {
+      normalizedDays.push(normalizeDay({}, normalizedDays.length));
+    }
+    if (normalizedDays.length > expectedDays) {
+      normalizedDays = normalizedDays.slice(0, expectedDays);
+    }
+  }
+
+  const itinerary: GeneratedItinerary = {
     summary: toString(
       payload.summary ?? payload.overview ?? payload.description,
       "맞춤 여행 일정이 생성되었습니다."
     ),
-    days: days.length > 0 ? days.map(normalizeDay) : [normalizeDay({}, 0)],
+    days: normalizedDays,
     budget,
     checklist: normalizeChecklist(payload.checklist ?? payload.checklists),
   };
-}
 
-export function validateItinerary(raw: unknown): GeneratedItinerary {
-  const validated = itinerarySchema.safeParse(raw);
-  if (!validated.success) {
-    console.error("[TripMind] 일정 스키마 검증 실패:", validated.error.flatten());
-    throw new Error("AI가 생성한 일정 형식이 올바르지 않습니다.");
+  const validated = itinerarySchema.safeParse(itinerary);
+  if (validated.success) {
+    return validated.data;
   }
 
-  return validated.data;
+  console.warn(
+    "[TripMind] 스키마 경고, 정규화 데이터 사용:",
+    validated.error.flatten()
+  );
+  return itinerary;
 }
 
 export function parseAndValidateItinerary(
   content: string,
-  totalBudget: number
+  totalBudget: number,
+  expectedDays?: number
 ): GeneratedItinerary {
   const parsed = parseAiJson(content);
-  const normalized = normalizeItinerary(parsed, totalBudget);
-  return validateItinerary(normalized);
+  return normalizeItinerary(parsed, totalBudget, expectedDays);
 }

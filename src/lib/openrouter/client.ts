@@ -44,6 +44,43 @@ interface ChatOptions {
   excludeModelIds?: string[];
 }
 
+export async function chatWithModel(
+  modelId: string,
+  messages: ChatMessage[],
+  options: ChatOptions = {}
+): Promise<{ content: string; model: string }> {
+  const runtime = getGenerateRuntimeConfig();
+  const apiKey = getApiKey();
+  const timeoutMs = options.timeoutMs ?? runtime.openRouterTimeoutMs;
+  const jsonAttempts: boolean[] = options.jsonMode ? [true, false] : [false];
+
+  let lastError: Error | null = null;
+
+  for (const useJsonMode of jsonAttempts) {
+    try {
+      return await requestChat(
+        apiKey,
+        modelId,
+        messages,
+        options,
+        useJsonMode,
+        timeoutMs
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (isRetryableError(message) && useJsonMode && jsonAttempts.includes(false)) {
+        lastError = error instanceof Error ? error : new Error(message);
+        continue;
+      }
+
+      throw error instanceof Error ? error : new Error(message);
+    }
+  }
+
+  throw lastError ?? new Error(`모델 ${modelId} 호출에 실패했습니다.`);
+}
+
 async function requestChat(
   apiKey: string,
   modelId: string,

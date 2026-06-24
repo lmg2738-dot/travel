@@ -89,7 +89,7 @@ function sortFreeModels(models: OpenRouterModel[]): OpenRouterModel[] {
 
 export async function fetchFreeModels(): Promise<OpenRouterModel[]> {
   const now = Date.now();
-  if (cachedFreeModels && now < cacheExpiresAt) {
+  if (!isVercelRuntime() && cachedFreeModels && now < cacheExpiresAt) {
     return cachedFreeModels;
   }
 
@@ -115,7 +115,9 @@ export async function fetchFreeModels(): Promise<OpenRouterModel[]> {
   );
 
   cachedFreeModels = freeModels;
-  cacheExpiresAt = now + CACHE_TTL_MS;
+  if (!isVercelRuntime()) {
+    cacheExpiresAt = now + CACHE_TTL_MS;
+  }
 
   return freeModels;
 }
@@ -126,7 +128,7 @@ export async function getAvailableFreeModels(): Promise<OpenRouterModel[]> {
 }
 
 export function markModelUnavailable(modelId: string): void {
-  if (modelId === "openrouter/free") return;
+  if (isVercelRuntime() || modelId === "openrouter/free") return;
   unavailableModels.add(modelId);
   if (cachedFreeModels) {
     cachedFreeModels = cachedFreeModels.filter((m) => m.id !== modelId);

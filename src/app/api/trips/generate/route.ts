@@ -79,17 +79,24 @@ function mapGenerateError(error: unknown): { message: string; status: number } {
   }
 
   if (
-    lower.includes("json") ||
-    lower.includes("형식") ||
-    lower.includes("파싱") ||
+    lower.includes("json으로 파싱") ||
     lower.includes("syntaxerror") ||
-    lower.includes("unexpected token") ||
-    lower.includes("비어 있습니다") ||
-    lower.includes("openrouter api")
+    lower.includes("unexpected token")
   ) {
     return {
       message: "AI 일정 형식 오류입니다. 일수를 줄여 다시 시도해주세요.",
       status: 502,
+    };
+  }
+
+  if (
+    lower.includes("모든 ai 모델") ||
+    lower.includes("모든 무료 모델") ||
+    lower.includes("불완전")
+  ) {
+    return {
+      message: "AI 서버가 일시적으로 불안정합니다. 1~2분 후 다시 시도해주세요.",
+      status: 503,
     };
   }
 

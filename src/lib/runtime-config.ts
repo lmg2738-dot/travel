@@ -21,9 +21,9 @@ export function getGenerateRuntimeConfig(): GenerateRuntimeConfig {
       openRouterTimeoutMs: 20_000,
       maxModelAttempts: 4,
       maxGenerationAttempts: 3,
-      maxTokensCap: 2_600,
+      maxTokensCap: 4_000,
       useFastModelList: true,
-      totalBudgetMs: 55_000,
+      totalBudgetMs: 56_000,
     };
   }
 
