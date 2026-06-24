@@ -8,7 +8,7 @@ import {
   PREFERRED_FREE_MODEL_IDS,
 } from "@/lib/openrouter/models";
 import { parseAndValidateItinerary } from "@/lib/ai/parse-itinerary";
-import { getGenerateRuntimeConfig } from "@/lib/runtime-config";
+import { getGenerateRuntimeConfig, isVercelRuntime } from "@/lib/runtime-config";
 
 const SYSTEM_PROMPT = `당신은 전문 여행 플래너 AI입니다.
 반드시 완전한 JSON만 출력하세요. 마크다운, 설명, 코드블록, 줄임표(...) 금지.
@@ -22,6 +22,15 @@ const SYSTEM_PROMPT = `당신은 전문 여행 플래너 AI입니다.
 - 하루 places는 2~3개 (짧은 description)
 - category: attraction|restaurant|cafe|shopping|transport
 - lat/lng는 실제 좌표 숫자`;
+
+const VERCEL_SYSTEM_PROMPT = `전문 여행 플래너. 완전한 JSON만 출력(마크다운/코드블록/... 금지).
+필수: summary, days(요청 일수와 동일), budget, checklist
+하루 places 2개, category: attraction|restaurant|cafe|shopping|transport
+예: {"summary":"3일 여행","days":[{"dayNo":1,"title":"Day1","places":[{"name":"장소","description":"설명","category":"attraction"}],"dailyBudget":50000,"tips":[]}],"budget":{"accommodation":100000,"food":80000,"transport":30000,"activities":50000,"shopping":30000,"contingency":20000,"total":310000},"checklist":[{"category":"준비물","items":["신분증"]}]}`;
+
+function getSystemPrompt(): string {
+  return isVercelRuntime() ? VERCEL_SYSTEM_PROMPT : SYSTEM_PROMPT;
+}
 
 function buildUserPrompt(
   request: GenerateTripRequest,
@@ -39,7 +48,9 @@ days 배열은 반드시 ${request.days}개 요소를 포함해야 합니다.
 }
 
 function estimateMaxTokens(days: number, cap: number): number {
-  return Math.min(cap, Math.max(2400, days * 750));
+  const perDay = isVercelRuntime() ? 650 : 750;
+  const floor = isVercelRuntime() ? 2000 : 2400;
+  return Math.min(cap, Math.max(floor, days * perDay));
 }
 
 async function loadAihubContext(
@@ -95,13 +106,12 @@ export async function generateItinerary(
   );
 
   const messages = [
-    { role: "system" as const, content: SYSTEM_PROMPT },
+    { role: "system" as const, content: getSystemPrompt() },
     { role: "user" as const, content: buildUserPrompt(request, aihubContext) },
   ];
 
   let lastError: Error | null = null;
-  const maxModelTries =
-    runtime.maxModelAttempts * Math.max(1, runtime.maxGenerationAttempts);
+  const maxModelTries = runtime.maxModelAttempts;
 
   for (let attempt = 0; attempt < runtime.maxGenerationAttempts; attempt++) {
     const elapsed = Date.now() - startedAt;

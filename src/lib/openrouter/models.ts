@@ -20,11 +20,17 @@ export const VERIFIED_FALLBACK_MODEL_IDS = [
   "openrouter/free",
 ];
 
-/** Vercel: 안정 모델 2개만 (호출 수 최소화) */
-export const VERCEL_VERIFIED_MODEL_IDS = [
+/** Vercel 우선 모델 (API 목록 조회 없이 즉시 사용) */
+export const VERCEL_STATIC_MODEL_IDS = [
   "openai/gpt-oss-120b:free",
   "openai/gpt-oss-20b:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
+  "google/gemma-4-26b-a4b-it:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
 ];
+
+/** @deprecated VERCEL_STATIC_MODEL_IDS 사용 */
+export const VERCEL_VERIFIED_MODEL_IDS = VERCEL_STATIC_MODEL_IDS;
 
 /** JSON 일정 생성 우선순위 (live 목록과 교차 검증됨) */
 export const PREFERRED_FREE_MODEL_IDS = [...VERIFIED_FALLBACK_MODEL_IDS];
@@ -189,9 +195,11 @@ export async function resolvePreferredFreeModelIds(
   const exclude = new Set(excludeIds);
 
   if (isVercelRuntime()) {
-    const verified = VERCEL_VERIFIED_MODEL_IDS.filter((id) => !exclude.has(id));
-    if (verified.length > 0) {
-      return verified.slice(0, maxCount);
+    const staticModels = [
+      ...new Set([...VERCEL_STATIC_MODEL_IDS, ...VERIFIED_FALLBACK_MODEL_IDS]),
+    ].filter((id) => !exclude.has(id));
+    if (staticModels.length > 0) {
+      return staticModels.slice(0, maxCount);
     }
   }
 
@@ -200,7 +208,7 @@ export async function resolvePreferredFreeModelIds(
     const availableIds = new Set(available.map((model) => model.id));
 
     const preferredPool = isVercelRuntime()
-      ? [...VERCEL_VERIFIED_MODEL_IDS, ...VERIFIED_FALLBACK_MODEL_IDS]
+      ? [...VERCEL_STATIC_MODEL_IDS, ...VERIFIED_FALLBACK_MODEL_IDS]
       : preferredIds;
 
     const matchedPreferred = preferredPool.filter(
@@ -221,9 +229,8 @@ export async function resolvePreferredFreeModelIds(
     console.warn("[OpenRouter] 모델 목록 조회 실패, 검증된 fallback 사용:", error);
   }
 
-  const fallbackPool = isVercelRuntime()
-    ? VERCEL_VERIFIED_MODEL_IDS
-    : VERIFIED_FALLBACK_MODEL_IDS;
-
-  return fallbackPool.filter((id) => !exclude.has(id)).slice(0, maxCount);
+  return VERIFIED_FALLBACK_MODEL_IDS.filter((id) => !exclude.has(id)).slice(
+    0,
+    maxCount
+  );
 }
