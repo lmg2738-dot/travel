@@ -1,0 +1,139 @@
+import {
+  getAvailableFreeModels,
+  markModelUnavailable,
+  isModelUnavailableError,
+} from "./models";
+import type { ChatMessage, ChatCompletionResponse } from "./types";
+
+const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
+const REQUEST_TIMEOUT_MS = 55_000;
+const MAX_MODEL_ATTEMPTS = 6;
+
+function getApiKey(): string {
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) {
+    throw new Error(
+      "OPENROUTER_API_KEY가 설정되지 않았습니다. .env.local 파일을 확인하세요."
+    );
+  }
+  return key;
+}
+
+function getSiteUrl(): string {
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    return process.env.NEXT_PUBLIC_SITE_URL;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  return "http://localhost:50002";
+}
+
+function isRetryableError(message: string): boolean {
+  return isModelUnavailableError(0, message);
+}
+
+interface ChatOptions {
+  jsonMode?: boolean;
+  maxTokens?: number;
+}
+
+async function requestChat(
+  apiKey: string,
+  modelId: string,
+  messages: ChatMessage[],
+  options: ChatOptions,
+  useJsonMode: boolean
+): Promise<{ content: string; model: string }> {
+  const body: Record<string, unknown> = {
+    model: modelId,
+    messages,
+    max_tokens: options.maxTokens ?? 4096,
+  };
+
+  if (useJsonMode && options.jsonMode) {
+    body.response_format = { type: "json_object" };
+  }
+
+  const response = await fetch(OPENROUTER_CHAT_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": getSiteUrl(),
+      "X-Title": "TripMind AI",
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  const data: ChatCompletionResponse = await response.json();
+  const errorMsg = data.error?.message ?? "";
+
+  if (!response.ok) {
+    throw new Error(errorMsg || `OpenRouter API 오류: HTTP ${response.status}`);
+  }
+
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("AI 응답이 비어 있습니다.");
+  }
+
+  return { content, model: modelId };
+}
+
+/**
+ * OpenRouter 무료 모델만 사용하며, 실패 시 다음 모델로 자동 전환
+ */
+export async function chatWithFreeModels(
+  messages: ChatMessage[],
+  options: ChatOptions = {}
+): Promise<{ content: string; model: string }> {
+  const apiKey = getApiKey();
+  const models = await getAvailableFreeModels();
+
+  if (models.length === 0) {
+    throw new Error(
+      "사용 가능한 OpenRouter 무료 모델이 없습니다. 잠시 후 다시 시도해주세요."
+    );
+  }
+
+  let lastError: Error | null = null;
+  const candidates = models.slice(0, MAX_MODEL_ATTEMPTS);
+
+  for (let i = 0; i < candidates.length; i++) {
+    const model = candidates[i];
+    const isLastModel = i === candidates.length - 1;
+    const attempts: boolean[] =
+      options.jsonMode && isLastModel ? [true, false] : [true];
+
+    for (const useJsonMode of attempts) {
+      try {
+        return await requestChat(apiKey, model.id, messages, options, useJsonMode);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        if (isRetryableError(message)) {
+          console.warn(
+            `[OpenRouter] 모델 재시도/제외: ${model.id} (json=${useJsonMode}) - ${message}`
+          );
+          lastError = error instanceof Error ? error : new Error(message);
+
+          if (useJsonMode && isLastModel) {
+            continue;
+          }
+
+          markModelUnavailable(model.id);
+          break;
+        }
+
+        throw error instanceof Error ? error : new Error(message);
+      }
+    }
+  }
+
+  throw (
+    lastError ??
+    new Error("모든 무료 모델 시도에 실패했습니다. 잠시 후 다시 시도해주세요.")
+  );
+}
