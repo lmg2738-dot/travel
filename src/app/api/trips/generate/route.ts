@@ -22,13 +22,17 @@ function getMaxDays(): number {
 function mapGenerateError(error: unknown): { message: string; status: number } {
   const message = error instanceof Error ? error.message : String(error);
   const lower = message.toLowerCase();
-  const isSyntaxError =
-    error instanceof SyntaxError || error instanceof Error && error.name === "SyntaxError";
 
-  if (isSyntaxError && lower.includes("json")) {
+  if (error instanceof SyntaxError) {
+    if (lower.includes("position 1") || lower.includes("line 1 column")) {
+      return {
+        message: "요청 형식이 올바르지 않습니다. 입력값을 확인해주세요.",
+        status: 400,
+      };
+    }
     return {
-      message: "요청 형식이 올바르지 않습니다. 입력값을 확인해주세요.",
-      status: 400,
+      message: "AI 일정 형식 오류입니다. 일수를 줄여 다시 시도해주세요.",
+      status: 502,
     };
   }
 
@@ -68,9 +72,14 @@ function mapGenerateError(error: unknown): { message: string; status: number } {
     lower.includes("모든 무료 모델") ||
     lower.includes("provider returned error") ||
     lower.includes("rate limit") ||
+    lower.includes("free-models-per-day") ||
     lower.includes("http 429") ||
+    lower.includes("http 500") ||
     lower.includes("http 502") ||
-    lower.includes("http 503")
+    lower.includes("http 503") ||
+    lower.includes("openrouter api") ||
+    lower.includes("비어 있습니다") ||
+    lower.includes("호출에 실패")
   ) {
     return {
       message: "AI 서버가 일시적으로 불안정합니다. 1~2분 후 다시 시도해주세요.",
@@ -80,8 +89,10 @@ function mapGenerateError(error: unknown): { message: string; status: number } {
 
   if (
     lower.includes("json으로 파싱") ||
-    lower.includes("syntaxerror") ||
-    lower.includes("unexpected token")
+    lower.includes("unexpected token") ||
+    lower.includes("expected") ||
+    lower.includes(" in json at position") ||
+    lower.includes("after array element")
   ) {
     return {
       message: "AI 일정 형식 오류입니다. 일수를 줄여 다시 시도해주세요.",

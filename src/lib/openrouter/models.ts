@@ -12,6 +12,7 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
  * 모델 목록 API 실패 시에만 사용
  */
 export const VERIFIED_FALLBACK_MODEL_IDS = [
+  "openai/gpt-oss-120b:free",
   "openai/gpt-oss-20b:free",
   "qwen/qwen3-next-80b-a3b-instruct:free",
   "google/gemma-4-26b-a4b-it:free",
@@ -19,12 +20,12 @@ export const VERIFIED_FALLBACK_MODEL_IDS = [
   "openrouter/free",
 ];
 
-/** Vercel에서는 라우터 대신 검증된 단일 모델만 사용 */
+/** Vercel에서는 검증된 단일 모델만 사용 (120b가 20b보다 안정적) */
 export const VERCEL_VERIFIED_MODEL_IDS = [
+  "openai/gpt-oss-120b:free",
   "openai/gpt-oss-20b:free",
   "google/gemma-4-26b-a4b-it:free",
   "qwen/qwen3-next-80b-a3b-instruct:free",
-  "google/gemma-4-31b-it:free",
 ];
 
 /** JSON 일정 생성 우선순위 (live 목록과 교차 검증됨) */
@@ -200,11 +201,15 @@ export async function resolvePreferredFreeModelIds(
     const available = await getAvailableFreeModels();
     const availableIds = new Set(available.map((model) => model.id));
 
-    const matchedPreferred = preferredIds.filter(
+    const preferredPool = isVercelRuntime()
+      ? [...VERCEL_VERIFIED_MODEL_IDS, ...VERIFIED_FALLBACK_MODEL_IDS]
+      : preferredIds;
+
+    const matchedPreferred = preferredPool.filter(
       (id) => availableIds.has(id) && !exclude.has(id)
     );
     if (matchedPreferred.length > 0) {
-      return matchedPreferred.slice(0, maxCount);
+      return [...new Set(matchedPreferred)].slice(0, maxCount);
     }
 
     const liveModels = available
@@ -218,8 +223,9 @@ export async function resolvePreferredFreeModelIds(
     console.warn("[OpenRouter] 모델 목록 조회 실패, 검증된 fallback 사용:", error);
   }
 
-  return VERIFIED_FALLBACK_MODEL_IDS.filter((id) => !exclude.has(id)).slice(
-    0,
-    maxCount
-  );
+  const fallbackPool = isVercelRuntime()
+    ? VERCEL_VERIFIED_MODEL_IDS
+    : VERIFIED_FALLBACK_MODEL_IDS;
+
+  return fallbackPool.filter((id) => !exclude.has(id)).slice(0, maxCount);
 }

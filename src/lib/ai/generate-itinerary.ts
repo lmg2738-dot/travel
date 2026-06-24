@@ -72,7 +72,8 @@ function isFormatError(error: unknown): boolean {
     message.includes("JSON") ||
     message.includes("파싱") ||
     message.includes("Unexpected token") ||
-    message.includes("Expected")
+    message.includes("Expected") ||
+    message.includes("after array element")
   );
 }
 
@@ -165,7 +166,13 @@ export async function generateItinerary(
   }
 
   throw (
-    lastError ??
-    new Error("모든 AI 모델에서 일정 생성에 실패했습니다. 잠시 후 다시 시도해주세요.")
+    lastError instanceof SyntaxError
+      ? new Error(
+          "AI가 생성한 일정 JSON 파싱에 실패했습니다. 일수를 줄여 다시 시도해주세요."
+        )
+      : lastError ??
+          new Error(
+            "모든 AI 모델에서 일정 생성에 실패했습니다. 잠시 후 다시 시도해주세요."
+          )
   );
 }

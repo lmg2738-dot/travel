@@ -19,9 +19,9 @@ export function getGenerateRuntimeConfig(): GenerateRuntimeConfig {
     return {
       skipAihub: true,
       openRouterTimeoutMs: 20_000,
-      maxModelAttempts: 4,
-      maxGenerationAttempts: 3,
-      maxTokensCap: 4_000,
+      maxModelAttempts: 3,
+      maxGenerationAttempts: 2,
+      maxTokensCap: 3_600,
       useFastModelList: true,
       totalBudgetMs: 56_000,
     };
