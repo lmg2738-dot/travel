@@ -1,61 +1,36 @@
 import type { GeneratedItinerary, GenerateTripRequest } from "@/types/trip";
 import { searchTourismDatasets, formatAihubContext } from "@/lib/aihub/tourism";
 import { chatWithFreeModels } from "@/lib/openrouter/client";
+import { markModelUnavailable } from "@/lib/openrouter/models";
 import { parseAndValidateItinerary } from "@/lib/ai/parse-itinerary";
 import { getGenerateRuntimeConfig } from "@/lib/runtime-config";
 
 const SYSTEM_PROMPT = `당신은 전문 여행 플래너 AI입니다.
-반드시 아래 JSON 구조만 출력하세요. 설명, 마크다운, 코드블록 없이 순수 JSON만 반환하세요.
+반드시 완전한 JSON만 출력하세요. 마크다운, 설명, 코드블록, 줄임표(...) 금지.
 
-{
-  "summary": "여행 요약",
-  "days": [
-    {
-      "dayNo": 1,
-      "title": "Day 1",
-      "places": [
-        {
-          "name": "장소명",
-          "description": "설명",
-          "address": "주소",
-          "lat": 37.5,
-          "lng": 127.0,
-          "estimatedCost": 10000,
-          "category": "attraction"
-        }
-      ],
-      "dailyBudget": 100000,
-      "tips": ["팁"]
-    }
-  ],
-  "budget": {
-    "accommodation": 0,
-    "food": 0,
-    "transport": 0,
-    "activities": 0,
-    "shopping": 0,
-    "contingency": 0,
-    "total": 0
-  },
-  "checklist": [{ "category": "준비물", "items": ["여권"] }]
-}
-
-category: attraction|restaurant|cafe|shopping|transport`;
+규칙:
+- summary, days, budget, checklist 필드 필수
+- days 배열 길이는 요청 일수와 동일
+- 하루 places는 2~3개만 (짧은 description)
+- category: attraction|restaurant|cafe|shopping|transport
+- lat/lng는 실제 좌표 숫자`;
 
 function buildUserPrompt(
   request: GenerateTripRequest,
   aihubContext: string
 ): string {
   return `목적지: ${request.destination}
-일수: ${request.days}일 (days 배열 ${request.days}개)
+일수: ${request.days}일
 예산: ${request.budget.toLocaleString()}원
 스타일: ${request.style}
 ${request.startDate ? `출발일: ${request.startDate}` : ""}
-${aihubContext ? `\n참고:\n${aihubContext}` : ""}`;
+${aihubContext ? `\n참고:\n${aihubContext}` : ""}
+
+days는 ${request.days}개, 각 day places는 2~3개로 간결하게 작성하세요.`;
 }
 
 function estimateMaxTokens(days: number, cap: number): number {
-  return Math.min(cap, Math.max(1800, days * 450));
+  return Math.min(cap, Math.max(2000, days * 550));
 }
 
 async function loadAihubContext(
@@ -85,7 +60,9 @@ function isFormatError(message: string): boolean {
   return (
     message.includes("JSON") ||
     message.includes("형식") ||
-    message.includes("파싱")
+    message.includes("파싱") ||
+    message.includes("SyntaxError") ||
+    message.includes("Unexpected token")
   );
 }
 
@@ -94,11 +71,12 @@ export async function generateItinerary(
 ): Promise<GeneratedItinerary> {
   const runtime = getGenerateRuntimeConfig();
   const startedAt = Date.now();
+  const excludedModels: string[] = [];
 
   const aihubContext = await loadAihubContext(
     request.destination,
     runtime.skipAihub,
-    runtime.skipAihub ? 0 : 3_000
+    runtime.skipAihub ? 0 : 2_000
   );
 
   const messages = [
@@ -118,20 +96,31 @@ export async function generateItinerary(
       );
     }
 
+    let usedModel = "";
+
     try {
       const { content, model } = await chatWithFreeModels(messages, {
         jsonMode: true,
         maxTokens: estimateMaxTokens(request.days, runtime.maxTokensCap),
         timeoutMs: Math.min(runtime.openRouterTimeoutMs, remaining - 2_000),
         maxModelAttempts: runtime.maxModelAttempts,
+        excludeModelIds: excludedModels,
       });
 
-      console.info(`[TripMind] 일정 생성 완료 (model: ${model}, ${Date.now() - startedAt}ms)`);
+      usedModel = model;
+      console.info(
+        `[TripMind] 일정 생성 완료 (model: ${model}, ${Date.now() - startedAt}ms)`
+      );
 
       return parseAndValidateItinerary(content, request.budget);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       lastError = err;
+
+      if (usedModel) {
+        excludedModels.push(usedModel);
+        markModelUnavailable(usedModel);
+      }
 
       if (
         !isFormatError(err.message) ||
@@ -141,7 +130,7 @@ export async function generateItinerary(
       }
 
       console.warn(
-        `[TripMind] 일정 형식 오류, 재시도 (${attempt + 1}/${runtime.maxGenerationAttempts})`
+        `[TripMind] 일정 형식 오류, 다른 모델로 재시도 (${attempt + 1}/${runtime.maxGenerationAttempts})`
       );
     }
   }

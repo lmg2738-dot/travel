@@ -84,8 +84,19 @@ export async function POST(request: Request) {
     }
 
     if (
+      message.includes("OpenRouter API 오류: HTTP 401") ||
+      message.includes("OpenRouter API 오류: HTTP 403")
+    ) {
+      return NextResponse.json(
+        { error: "OpenRouter API 키가 유효하지 않습니다. Vercel 환경 변수를 확인하세요." },
+        { status: 500 }
+      );
+    }
+
+    if (
       message.includes("timeout") ||
       message.includes("aborted") ||
+      message.includes("초과") ||
       message.includes("모든 무료 모델")
     ) {
       return NextResponse.json(
@@ -97,7 +108,13 @@ export async function POST(request: Request) {
       );
     }
 
-    if (message.includes("JSON") || message.includes("형식")) {
+    if (
+      message.includes("JSON") ||
+      message.includes("형식") ||
+      message.includes("파싱") ||
+      message.includes("SyntaxError") ||
+      message.includes("Unexpected token")
+    ) {
       return NextResponse.json(
         { error: "AI 일정 형식 오류입니다. 다시 시도해주세요." },
         { status: 502 }

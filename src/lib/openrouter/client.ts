@@ -2,12 +2,14 @@ import {
   getAvailableFreeModels,
   markModelUnavailable,
   isModelUnavailableError,
+  resolvePreferredFreeModelIds,
 } from "./models";
 import type { ChatMessage, ChatCompletionResponse } from "./types";
 import {
   getGenerateRuntimeConfig,
   VERCEL_FAST_MODELS,
 } from "@/lib/runtime-config";
+import { PREFERRED_FREE_MODEL_IDS } from "./models";
 
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -41,6 +43,7 @@ interface ChatOptions {
   timeoutMs?: number;
   maxModelAttempts?: number;
   preferredModelIds?: string[];
+  excludeModelIds?: string[];
 }
 
 async function requestChat(
@@ -89,12 +92,31 @@ async function requestChat(
 }
 
 async function resolveModelIds(options: ChatOptions): Promise<string[]> {
+  const runtime = getGenerateRuntimeConfig();
+  const maxAttempts = options.maxModelAttempts ?? runtime.maxModelAttempts;
+  const exclude = options.excludeModelIds ?? [];
+
   if (options.preferredModelIds?.length) {
-    return options.preferredModelIds;
+    return resolvePreferredFreeModelIds(
+      options.preferredModelIds,
+      maxAttempts,
+      exclude
+    );
+  }
+
+  if (runtime.useFastModelList) {
+    return resolvePreferredFreeModelIds(
+      VERCEL_FAST_MODELS,
+      maxAttempts,
+      exclude
+    );
   }
 
   const models = await getAvailableFreeModels();
-  return models.map((model) => model.id);
+  return models
+    .map((model) => model.id)
+    .filter((id) => !exclude.includes(id))
+    .slice(0, maxAttempts);
 }
 
 /**
@@ -109,13 +131,15 @@ export async function chatWithFreeModels(
   const timeoutMs = options.timeoutMs ?? runtime.openRouterTimeoutMs;
   const maxAttempts = options.maxModelAttempts ?? runtime.maxModelAttempts;
 
-  const preferredIds = options.preferredModelIds
-    ?? (runtime.useFastModelList ? VERCEL_FAST_MODELS : undefined);
+  const preferredIds = runtime.useFastModelList
+    ? VERCEL_FAST_MODELS
+    : PREFERRED_FREE_MODEL_IDS;
 
-  const modelIds = (await resolveModelIds({
+  const modelIds = await resolveModelIds({
     ...options,
-    preferredModelIds: preferredIds,
-  })).slice(0, maxAttempts);
+    preferredModelIds: options.preferredModelIds ?? preferredIds,
+    maxModelAttempts: maxAttempts,
+  });
 
   if (modelIds.length === 0) {
     throw new Error(

@@ -4,13 +4,13 @@ const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1시간
 
 /** JSON 일정 생성에 적합한 무료 모델 우선순위 */
-const PREFERRED_FREE_MODEL_IDS = [
+export const PREFERRED_FREE_MODEL_IDS = [
   "google/gemini-2.0-flash-exp:free",
   "meta-llama/llama-3.3-70b-instruct:free",
   "qwen/qwen3-235b-a22b:free",
   "mistralai/mistral-small-3.1-24b-instruct:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
   "openai/gpt-oss-20b:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
 ];
 
 const EXCLUDED_MODEL_PATTERNS = [
@@ -20,10 +20,11 @@ const EXCLUDED_MODEL_PATTERNS = [
   /whisper/i,
   /dall-?e/i,
   /stable-?diffusion/i,
-  /image/i,
   /vision-only/i,
   /embedding/i,
   /rerank/i,
+  /nemotron/i,
+  /owl-alpha/i,
 ];
 
 /** 런타임 중 사용 불가로 확인된 모델 ID */
@@ -148,4 +149,39 @@ export function isModelUnavailableError(
 export function clearModelCache(): void {
   cachedFreeModels = null;
   cacheExpiresAt = 0;
+}
+
+/** 우선 모델 목록과 실제 사용 가능 모델을 교차 검증 */
+export async function resolvePreferredFreeModelIds(
+  preferredIds: string[],
+  maxCount: number,
+  excludeIds: string[] = []
+): Promise<string[]> {
+  const exclude = new Set(excludeIds);
+
+  try {
+    const available = await Promise.race([
+      getAvailableFreeModels(),
+      new Promise<OpenRouterModel[]>((_, reject) =>
+        setTimeout(() => reject(new Error("model list timeout")), 4_000)
+      ),
+    ]);
+
+    const availableIds = new Set(available.map((model) => model.id));
+    const matched = preferredIds.filter(
+      (id) => availableIds.has(id) && !exclude.has(id)
+    );
+
+    if (matched.length > 0) {
+      return matched.slice(0, maxCount);
+    }
+
+    return available
+      .map((model) => model.id)
+      .filter((id) => !exclude.has(id))
+      .slice(0, maxCount);
+  } catch (error) {
+    console.warn("[OpenRouter] 모델 목록 조회 실패, 기본 목록 사용:", error);
+    return preferredIds.filter((id) => !exclude.has(id)).slice(0, maxCount);
+  }
 }

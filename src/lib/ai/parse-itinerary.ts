@@ -199,16 +199,42 @@ export function extractJson(text: string): string {
 function repairJsonText(text: string): string {
   return text
     .replace(/^\uFEFF/, "")
+    .replace(/,\s*\.\.\.\s*,/g, ",")
+    .replace(/,\s*\.\.\./g, "")
+    .replace(/\[\s*\.\.\.\s*\]/g, "[]")
+    .replace(/\.\.\./g, "")
     .replace(/,\s*([}\]])/g, "$1")
     .replace(/([{,]\s*)'([^']+)'(\s*:)/g, '$1"$2"$3')
     .replace(/:\s*'([^']*)'/g, ': "$1"');
 }
 
+function closeTruncatedJson(text: string): string {
+  let result = text.trim();
+  const openBraces = (result.match(/{/g) ?? []).length;
+  const closeBraces = (result.match(/}/g) ?? []).length;
+  const openBrackets = (result.match(/\[/g) ?? []).length;
+  const closeBrackets = (result.match(/]/g) ?? []).length;
+
+  if (result.endsWith(",")) {
+    result = result.slice(0, -1);
+  }
+
+  for (let i = 0; i < openBrackets - closeBrackets; i++) {
+    result += "]";
+  }
+  for (let i = 0; i < openBraces - closeBraces; i++) {
+    result += "}";
+  }
+
+  return result;
+}
+
 export function parseAiJson(content: string): unknown {
   const candidates = [
     extractJson(content),
-    content.trim(),
     repairJsonText(extractJson(content)),
+    closeTruncatedJson(repairJsonText(extractJson(content))),
+    content.trim(),
   ];
 
   let lastError: Error | null = null;

@@ -1,4 +1,6 @@
 /** Vercel 서버리스(최대 60초) vs 로컬 개발 환경 설정 */
+import { PREFERRED_FREE_MODEL_IDS } from "@/lib/openrouter/models";
+
 export function isVercelRuntime(): boolean {
   return process.env.VERCEL === "1";
 }
@@ -17,10 +19,10 @@ export function getGenerateRuntimeConfig(): GenerateRuntimeConfig {
   if (isVercelRuntime()) {
     return {
       skipAihub: true,
-      openRouterTimeoutMs: 48_000,
-      maxModelAttempts: 2,
-      maxGenerationAttempts: 1,
-      maxTokensCap: 4_000,
+      openRouterTimeoutMs: 45_000,
+      maxModelAttempts: 3,
+      maxGenerationAttempts: 2,
+      maxTokensCap: 3_500,
       useFastModelList: true,
       totalBudgetMs: 55_000,
     };
@@ -37,10 +39,4 @@ export function getGenerateRuntimeConfig(): GenerateRuntimeConfig {
   };
 }
 
-/** Vercel에서 모델 목록 API 호출 없이 바로 시도할 우선 모델 */
-export const VERCEL_FAST_MODELS = [
-  "google/gemini-2.0-flash-exp:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen3-235b-a22b:free",
-  "mistralai/mistral-small-3.1-24b-instruct:free",
-];
+export const VERCEL_FAST_MODELS = PREFERRED_FREE_MODEL_IDS;
