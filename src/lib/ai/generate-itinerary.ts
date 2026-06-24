@@ -4,6 +4,8 @@ import { chatWithModel } from "@/lib/openrouter/client";
 import {
   markModelUnavailable,
   isModelUnavailableError,
+  isOpenRouterQuotaExhausted,
+  isOpenRouterRateLimited,
   resolvePreferredFreeModelIds,
   PREFERRED_FREE_MODEL_IDS,
 } from "@/lib/openrouter/models";
@@ -36,6 +38,11 @@ function buildUserPrompt(
   request: GenerateTripRequest,
   aihubContext: string
 ): string {
+  if (isVercelRuntime()) {
+    return `목적지:${request.destination}, ${request.days}일, 예산:${request.budget}원, 스타일:${request.style}
+days ${request.days}개, 각 day places 2개, JSON만 출력`;
+  }
+
   return `목적지: ${request.destination}
 일수: ${request.days}일
 예산: ${request.budget.toLocaleString()}원
@@ -48,9 +55,13 @@ days 배열은 반드시 ${request.days}개 요소를 포함해야 합니다.
 }
 
 function estimateMaxTokens(days: number, cap: number): number {
-  const perDay = isVercelRuntime() ? 650 : 750;
-  const floor = isVercelRuntime() ? 2000 : 2400;
+  const perDay = isVercelRuntime() ? 550 : 750;
+  const floor = isVercelRuntime() ? 1800 : 2400;
   return Math.min(cap, Math.max(floor, days * perDay));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function loadAihubContext(
@@ -129,14 +140,24 @@ export async function generateItinerary(
       [...excludedModels]
     );
 
-    for (const modelId of modelIds) {
+    for (let modelIndex = 0; modelIndex < modelIds.length; modelIndex++) {
+      const modelId = modelIds[modelIndex];
       if (excludedModels.has(modelId)) continue;
+
+      const elapsedNow = Date.now() - startedAt;
+      const remainingNow = runtime.totalBudgetMs - elapsedNow;
+      if (remainingNow < 5_000) break;
+
+      const timeoutMs =
+        modelIndex === 0
+          ? Math.min(runtime.openRouterTimeoutMs, remainingNow - 4_000)
+          : Math.min(remainingNow - 2_000, 15_000);
 
       try {
         const { content, model } = await chatWithModel(modelId, messages, {
           jsonMode: false,
           maxTokens: estimateMaxTokens(request.days, runtime.maxTokensCap),
-          timeoutMs: Math.min(runtime.openRouterTimeoutMs, remaining - 2_000),
+          timeoutMs: Math.max(timeoutMs, 8_000),
         });
 
         const itinerary = parseAndValidateItinerary(
@@ -154,12 +175,21 @@ export async function generateItinerary(
         const err = error instanceof Error ? error : new Error(String(error));
         lastError = err;
 
+        if (isOpenRouterQuotaExhausted(err.message)) {
+          throw new Error(
+            "OpenRouter 무료 사용 한도에 도달했습니다. 내일 다시 시도하거나 OpenRouter에 크레딧을 추가해주세요."
+          );
+        }
+
         if (isFormatError(error) || isRetryableError(err.message)) {
           excludedModels.add(modelId);
           markModelUnavailable(modelId);
           console.warn(
             `[TripMind] 모델 ${modelId} 실패, 다음 모델 시도: ${err.message}`
           );
+          if (isOpenRouterRateLimited(err.message)) {
+            await sleep(1_500);
+          }
           continue;
         }
 

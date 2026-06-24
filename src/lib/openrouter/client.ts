@@ -126,6 +126,7 @@ async function requestChat(
     messages,
     max_tokens: options.maxTokens ?? 4096,
     stream: false,
+    temperature: 0.4,
   };
 
   if (useJsonMode && options.jsonMode) {

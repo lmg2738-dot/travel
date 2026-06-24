@@ -20,13 +20,10 @@ export const VERIFIED_FALLBACK_MODEL_IDS = [
   "openrouter/free",
 ];
 
-/** Vercel 우선 모델 (API 목록 조회 없이 즉시 사용) */
+/** Vercel: 안정 모델 2개만 (호출·한도 절약) */
 export const VERCEL_STATIC_MODEL_IDS = [
   "openai/gpt-oss-120b:free",
-  "openai/gpt-oss-20b:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
-  "google/gemma-4-26b-a4b-it:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
+  "openrouter/free",
 ];
 
 /** @deprecated VERCEL_STATIC_MODEL_IDS 사용 */
@@ -138,6 +135,21 @@ export function markModelUnavailable(modelId: string): void {
   if (cachedFreeModels) {
     cachedFreeModels = cachedFreeModels.filter((m) => m.id !== modelId);
   }
+}
+
+export function isOpenRouterQuotaExhausted(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("free-models-per-day") ||
+    lower.includes("http 402") ||
+    (lower.includes("rate limit") && lower.includes("per-day")) ||
+    (lower.includes("credit") && lower.includes("unlock"))
+  );
+}
+
+export function isOpenRouterRateLimited(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes("rate limit") && !isOpenRouterQuotaExhausted(message);
 }
 
 export function isModelUnavailableError(

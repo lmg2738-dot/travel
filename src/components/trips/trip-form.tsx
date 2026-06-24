@@ -48,31 +48,53 @@ export function TripForm() {
     setError("");
     setLoading(true);
 
-    try {
-      const response = await fetch("/api/trips/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          destination,
-          days,
-          budget,
-          style,
-          startDate: startDate || undefined,
-        }),
-      });
+    const payload = {
+      destination,
+      days,
+      budget,
+      style,
+      startDate: startDate || undefined,
+    };
 
-      const data = await response.json();
+    const maxAttempts = 3;
 
-      if (!response.ok) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await fetch("/api/trips/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          router.push(`/trips/${data.tripId}`);
+          return;
+        }
+
+        const retryable =
+          response.status === 504 ||
+          response.status === 503 ||
+          response.status === 502;
+
+        if (retryable && attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 2_000 * attempt));
+          continue;
+        }
+
         setError(data.error ?? "일정 생성에 실패했습니다.");
         setLoading(false);
         return;
+      } catch {
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 2_000 * attempt));
+          continue;
+        }
+        setError("네트워크 오류가 발생했습니다.");
+        setLoading(false);
+        return;
       }
-
-      router.push(`/trips/${data.tripId}`);
-    } catch {
-      setError("네트워크 오류가 발생했습니다.");
-      setLoading(false);
     }
   }
 
