@@ -80,6 +80,8 @@ function mapGenerateError(error: unknown): { message: string; status: number } {
     lower.includes("http 502") ||
     lower.includes("http 503") ||
     lower.includes("openrouter api") ||
+    lower.includes("openrouter 응답") ||
+    lower.includes("응답 파싱") ||
     lower.includes("비어 있습니다") ||
     lower.includes("호출에 실패")
   ) {

@@ -84,6 +84,35 @@ export async function chatWithModel(
   throw lastError ?? new Error(`모델 ${modelId} 호출에 실패했습니다.`);
 }
 
+function extractMessageContent(data: ChatCompletionResponse): string {
+  const raw = data.choices?.[0]?.message?.content;
+
+  if (typeof raw === "string" && raw.trim()) {
+    return raw.trim();
+  }
+
+  if (Array.isArray(raw)) {
+    const joined = raw
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object" && "text" in part) {
+          return String(part.text ?? "");
+        }
+        return "";
+      })
+      .join("")
+      .trim();
+    if (joined) return joined;
+  }
+
+  const reasoning = data.choices?.[0]?.message?.reasoning;
+  if (typeof reasoning === "string" && reasoning.trim()) {
+    return reasoning.trim();
+  }
+
+  return "";
+}
+
 async function requestChat(
   apiKey: string,
   modelId: string,
@@ -96,6 +125,7 @@ async function requestChat(
     model: modelId,
     messages,
     max_tokens: options.maxTokens ?? 4096,
+    stream: false,
   };
 
   if (useJsonMode && options.jsonMode) {
@@ -107,6 +137,7 @@ async function requestChat(
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      Accept: "application/json",
       "HTTP-Referer": getSiteUrl(),
       "X-Title": "TripMind AI",
     },
@@ -114,22 +145,29 @@ async function requestChat(
     signal: AbortSignal.timeout(timeoutMs),
   });
 
-  let data: ChatCompletionResponse;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error(`OpenRouter API 오류: HTTP ${response.status}`);
+  const rawText = await response.text();
+  let data: ChatCompletionResponse = {};
+
+  if (rawText.trim()) {
+    try {
+      data = JSON.parse(rawText) as ChatCompletionResponse;
+    } catch {
+      throw new Error(
+        `OpenRouter 응답 파싱 실패 (HTTP ${response.status}, ${rawText.slice(0, 120)})`
+      );
+    }
   }
 
   const errorMsg = data.error?.message ?? "";
 
-  if (!response.ok) {
+  if (!response.ok || errorMsg) {
     throw new Error(errorMsg || `OpenRouter API 오류: HTTP ${response.status}`);
   }
 
-  const content = data.choices?.[0]?.message?.content;
+  const content = extractMessageContent(data);
   if (!content) {
-    throw new Error("AI 응답이 비어 있습니다.");
+    const finishReason = data.choices?.[0]?.finish_reason ?? "unknown";
+    throw new Error(`AI 응답이 비어 있습니다. (finish_reason: ${finishReason})`);
   }
 
   return { content, model: data.model ?? modelId };

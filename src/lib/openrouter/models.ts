@@ -177,6 +177,9 @@ export function isModelUnavailableError(
     "quota",
     "busy",
     "overloaded",
+    "openrouter",
+    "응답 파싱",
+    "응답이 비어",
   ];
 
   return unavailablePatterns.some((p) => msg.includes(p));

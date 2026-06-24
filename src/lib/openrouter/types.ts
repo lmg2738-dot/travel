@@ -28,10 +28,12 @@ export interface ChatMessage {
 
 export interface ChatCompletionResponse {
   model?: string;
-  choices: Array<{
-    message: {
-      content: string;
+  choices?: Array<{
+    message?: {
+      content?: string | Array<string | { type?: string; text?: string }> | null;
+      reasoning?: string | null;
     };
+    finish_reason?: string | null;
   }>;
   error?: {
     message: string;
