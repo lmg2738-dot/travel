@@ -18,12 +18,12 @@ export function getGenerateRuntimeConfig(): GenerateRuntimeConfig {
   if (isVercelRuntime()) {
     return {
       skipAihub: true,
-      openRouterTimeoutMs: 20_000,
-      maxModelAttempts: 3,
+      openRouterTimeoutMs: 25_000,
+      maxModelAttempts: 2,
       maxGenerationAttempts: 2,
-      maxTokensCap: 3_600,
+      maxTokensCap: 3_200,
       useFastModelList: true,
-      totalBudgetMs: 56_000,
+      totalBudgetMs: 55_000,
     };
   }
 

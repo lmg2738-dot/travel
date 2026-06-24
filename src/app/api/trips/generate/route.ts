@@ -57,10 +57,12 @@ function mapGenerateError(error: unknown): { message: string; status: number } {
   if (
     lower.includes("http 402") ||
     lower.includes("credit") ||
-    lower.includes("quota")
+    lower.includes("quota") ||
+    lower.includes("free-models-per-day")
   ) {
     return {
-      message: "OpenRouter 무료 사용 한도에 도달했습니다. 잠시 후 다시 시도해주세요.",
+      message:
+        "OpenRouter 무료 사용 한도에 도달했습니다. 내일 다시 시도하거나 OpenRouter에 크레딧을 추가해주세요.",
       status: 503,
     };
   }
@@ -72,7 +74,7 @@ function mapGenerateError(error: unknown): { message: string; status: number } {
     lower.includes("모든 무료 모델") ||
     lower.includes("provider returned error") ||
     lower.includes("rate limit") ||
-    lower.includes("free-models-per-day") ||
+    lower.includes("free-models-per-min") ||
     lower.includes("http 429") ||
     lower.includes("http 500") ||
     lower.includes("http 502") ||

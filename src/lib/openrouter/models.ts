@@ -20,12 +20,10 @@ export const VERIFIED_FALLBACK_MODEL_IDS = [
   "openrouter/free",
 ];
 
-/** Vercel에서는 검증된 단일 모델만 사용 (120b가 20b보다 안정적) */
+/** Vercel: 안정 모델 2개만 (호출 수 최소화) */
 export const VERCEL_VERIFIED_MODEL_IDS = [
   "openai/gpt-oss-120b:free",
   "openai/gpt-oss-20b:free",
-  "google/gemma-4-26b-a4b-it:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
 ];
 
 /** JSON 일정 생성 우선순위 (live 목록과 교차 검증됨) */
