@@ -12,11 +12,18 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
  * 모델 목록 API 실패 시에만 사용
  */
 export const VERIFIED_FALLBACK_MODEL_IDS = [
-  "openrouter/free",
   "openai/gpt-oss-20b:free",
   "qwen/qwen3-next-80b-a3b-instruct:free",
   "google/gemma-4-26b-a4b-it:free",
   "meta-llama/llama-3.3-70b-instruct:free",
+  "openrouter/free",
+];
+
+/** Vercel에서는 라우터 대신 검증된 단일 모델만 사용 */
+export const VERCEL_VERIFIED_MODEL_IDS = [
+  "openai/gpt-oss-20b:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
+  "google/gemma-4-26b-a4b-it:free",
 ];
 
 /** JSON 일정 생성 우선순위 (live 목록과 교차 검증됨) */
@@ -180,7 +187,7 @@ export async function resolvePreferredFreeModelIds(
   const exclude = new Set(excludeIds);
 
   if (isVercelRuntime()) {
-    const verified = PREFERRED_FREE_MODEL_IDS.filter((id) => !exclude.has(id));
+    const verified = VERCEL_VERIFIED_MODEL_IDS.filter((id) => !exclude.has(id));
     if (verified.length > 0) {
       return verified.slice(0, maxCount);
     }

@@ -27,6 +27,7 @@ export interface ChatMessage {
 }
 
 export interface ChatCompletionResponse {
+  model?: string;
   choices: Array<{
     message: {
       content: string;

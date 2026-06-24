@@ -92,7 +92,7 @@ async function requestChat(
     throw new Error("AI 응답이 비어 있습니다.");
   }
 
-  return { content, model: modelId };
+  return { content, model: data.model ?? modelId };
 }
 
 async function resolveModelIds(options: ChatOptions): Promise<string[]> {
