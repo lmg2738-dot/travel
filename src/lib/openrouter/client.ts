@@ -4,10 +4,12 @@ import {
   isModelUnavailableError,
 } from "./models";
 import type { ChatMessage, ChatCompletionResponse } from "./types";
+import {
+  getGenerateRuntimeConfig,
+  VERCEL_FAST_MODELS,
+} from "@/lib/runtime-config";
 
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
-const REQUEST_TIMEOUT_MS = 55_000;
-const MAX_MODEL_ATTEMPTS = 6;
 
 function getApiKey(): string {
   const key = process.env.OPENROUTER_API_KEY;
@@ -36,6 +38,9 @@ function isRetryableError(message: string): boolean {
 interface ChatOptions {
   jsonMode?: boolean;
   maxTokens?: number;
+  timeoutMs?: number;
+  maxModelAttempts?: number;
+  preferredModelIds?: string[];
 }
 
 async function requestChat(
@@ -43,7 +48,8 @@ async function requestChat(
   modelId: string,
   messages: ChatMessage[],
   options: ChatOptions,
-  useJsonMode: boolean
+  useJsonMode: boolean,
+  timeoutMs: number
 ): Promise<{ content: string; model: string }> {
   const body: Record<string, unknown> = {
     model: modelId,
@@ -64,7 +70,7 @@ async function requestChat(
       "X-Title": "TripMind AI",
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   const data: ChatCompletionResponse = await response.json();
@@ -82,6 +88,15 @@ async function requestChat(
   return { content, model: modelId };
 }
 
+async function resolveModelIds(options: ChatOptions): Promise<string[]> {
+  if (options.preferredModelIds?.length) {
+    return options.preferredModelIds;
+  }
+
+  const models = await getAvailableFreeModels();
+  return models.map((model) => model.id);
+}
+
 /**
  * OpenRouter 무료 모델만 사용하며, 실패 시 다음 모델로 자동 전환
  */
@@ -89,33 +104,49 @@ export async function chatWithFreeModels(
   messages: ChatMessage[],
   options: ChatOptions = {}
 ): Promise<{ content: string; model: string }> {
+  const runtime = getGenerateRuntimeConfig();
   const apiKey = getApiKey();
-  const models = await getAvailableFreeModels();
+  const timeoutMs = options.timeoutMs ?? runtime.openRouterTimeoutMs;
+  const maxAttempts = options.maxModelAttempts ?? runtime.maxModelAttempts;
 
-  if (models.length === 0) {
+  const preferredIds = options.preferredModelIds
+    ?? (runtime.useFastModelList ? VERCEL_FAST_MODELS : undefined);
+
+  const modelIds = (await resolveModelIds({
+    ...options,
+    preferredModelIds: preferredIds,
+  })).slice(0, maxAttempts);
+
+  if (modelIds.length === 0) {
     throw new Error(
       "사용 가능한 OpenRouter 무료 모델이 없습니다. 잠시 후 다시 시도해주세요."
     );
   }
 
   let lastError: Error | null = null;
-  const candidates = models.slice(0, MAX_MODEL_ATTEMPTS);
 
-  for (let i = 0; i < candidates.length; i++) {
-    const model = candidates[i];
-    const isLastModel = i === candidates.length - 1;
+  for (let i = 0; i < modelIds.length; i++) {
+    const modelId = modelIds[i];
+    const isLastModel = i === modelIds.length - 1;
     const attempts: boolean[] =
       options.jsonMode && isLastModel ? [true, false] : [true];
 
     for (const useJsonMode of attempts) {
       try {
-        return await requestChat(apiKey, model.id, messages, options, useJsonMode);
+        return await requestChat(
+          apiKey,
+          modelId,
+          messages,
+          options,
+          useJsonMode,
+          timeoutMs
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
 
         if (isRetryableError(message)) {
           console.warn(
-            `[OpenRouter] 모델 재시도/제외: ${model.id} (json=${useJsonMode}) - ${message}`
+            `[OpenRouter] 모델 재시도/제외: ${modelId} (json=${useJsonMode}) - ${message}`
           );
           lastError = error instanceof Error ? error : new Error(message);
 
@@ -123,7 +154,7 @@ export async function chatWithFreeModels(
             continue;
           }
 
-          markModelUnavailable(model.id);
+          markModelUnavailable(modelId);
           break;
         }
 

@@ -7,8 +7,11 @@ import type {
   DayItinerary,
   GeneratedItinerary,
 } from "@/types/trip";
+import { isVercelRuntime } from "@/lib/runtime-config";
 
-const DATA_DIR = path.join(process.cwd(), "data", "trips");
+const DATA_DIR = isVercelRuntime()
+  ? path.join("/tmp", "tripmind", "trips")
+  : path.join(process.cwd(), "data", "trips");
 const INDEX_FILE = path.join(DATA_DIR, ".index.json");
 
 export interface StoredTrip {

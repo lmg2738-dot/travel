@@ -4,6 +4,8 @@ import { generateItinerary } from "@/lib/ai/generate-itinerary";
 import { createTrip } from "@/lib/db/trips";
 
 export const maxDuration = 60;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const requestSchema = z.object({
   destination: z.string().min(1).max(100),
@@ -12,6 +14,10 @@ const requestSchema = z.object({
   style: z.enum(["커플", "가족", "솔로", "친구", "비즈니스", "배낭여행"]),
   startDate: z.string().optional(),
 });
+
+function getMaxDays(): number {
+  return process.env.VERCEL === "1" ? 7 : 30;
+}
 
 export async function POST(request: Request) {
   try {
@@ -26,6 +32,16 @@ export async function POST(request: Request) {
     }
 
     const { destination, days, budget, style, startDate } = parsed.data;
+    const maxDays = getMaxDays();
+
+    if (days > maxDays) {
+      return NextResponse.json(
+        {
+          error: `Vercel 환경에서는 최대 ${maxDays}일까지 생성할 수 있습니다. 일수를 줄여주세요.`,
+        },
+        { status: 400 }
+      );
+    }
 
     const itinerary = await generateItinerary({
       destination,

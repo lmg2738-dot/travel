@@ -1,21 +1,18 @@
-import { z } from "zod";
 import type { GeneratedItinerary, GenerateTripRequest } from "@/types/trip";
 import { searchTourismDatasets, formatAihubContext } from "@/lib/aihub/tourism";
 import { chatWithFreeModels } from "@/lib/openrouter/client";
 import { parseAndValidateItinerary } from "@/lib/ai/parse-itinerary";
-
-const AIHUB_CONTEXT_TIMEOUT_MS = 4_000;
-const MAX_GENERATION_ATTEMPTS = 3;
+import { getGenerateRuntimeConfig } from "@/lib/runtime-config";
 
 const SYSTEM_PROMPT = `당신은 전문 여행 플래너 AI입니다.
-반드시 아래 JSON 구조만 출력하세요. 설명 문장, 마크다운, 코드블록 없이 순수 JSON만 반환하세요.
+반드시 아래 JSON 구조만 출력하세요. 설명, 마크다운, 코드블록 없이 순수 JSON만 반환하세요.
 
 {
   "summary": "여행 요약",
   "days": [
     {
       "dayNo": 1,
-      "title": "Day 1 제목",
+      "title": "Day 1",
       "places": [
         {
           "name": "장소명",
@@ -43,34 +40,36 @@ const SYSTEM_PROMPT = `당신은 전문 여행 플래너 AI입니다.
   "checklist": [{ "category": "준비물", "items": ["여권"] }]
 }
 
-category는 attraction, restaurant, cafe, shopping, transport 중 하나만 사용하세요.`;
+category: attraction|restaurant|cafe|shopping|transport`;
 
 function buildUserPrompt(
   request: GenerateTripRequest,
   aihubContext: string
 ): string {
-  return `다음 조건으로 ${request.days}일간의 여행 일정 JSON을 생성하세요.
-
-목적지: ${request.destination}
-예산: ${request.budget.toLocaleString()}원 (KRW)
-여행 스타일: ${request.style}
+  return `목적지: ${request.destination}
+일수: ${request.days}일 (days 배열 ${request.days}개)
+예산: ${request.budget.toLocaleString()}원
+스타일: ${request.style}
 ${request.startDate ? `출발일: ${request.startDate}` : ""}
-${aihubContext ? `\n참고 데이터 (AI HUB):\n${aihubContext}` : ""}
-
-days 배열 길이는 정확히 ${request.days}개여야 합니다.
-budget.total은 ${request.budget}원과 비슷해야 합니다.`;
+${aihubContext ? `\n참고:\n${aihubContext}` : ""}`;
 }
 
-function estimateMaxTokens(days: number): number {
-  return Math.min(8192, Math.max(2500, days * 700));
+function estimateMaxTokens(days: number, cap: number): number {
+  return Math.min(cap, Math.max(1800, days * 450));
 }
 
-async function loadAihubContext(destination: string): Promise<string> {
+async function loadAihubContext(
+  destination: string,
+  skipAihub: boolean,
+  timeoutMs: number
+): Promise<string> {
+  if (skipAihub || timeoutMs <= 0) return "";
+
   try {
     const datasets = await Promise.race([
       searchTourismDatasets(destination),
       new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), AIHUB_CONTEXT_TIMEOUT_MS)
+        setTimeout(() => resolve(null), timeoutMs)
       ),
     ]);
 
@@ -93,7 +92,15 @@ function isFormatError(message: string): boolean {
 export async function generateItinerary(
   request: GenerateTripRequest
 ): Promise<GeneratedItinerary> {
-  const aihubContext = await loadAihubContext(request.destination);
+  const runtime = getGenerateRuntimeConfig();
+  const startedAt = Date.now();
+
+  const aihubContext = await loadAihubContext(
+    request.destination,
+    runtime.skipAihub,
+    runtime.skipAihub ? 0 : 3_000
+  );
+
   const messages = [
     { role: "system" as const, content: SYSTEM_PROMPT },
     { role: "user" as const, content: buildUserPrompt(request, aihubContext) },
@@ -101,26 +108,40 @@ export async function generateItinerary(
 
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+  for (let attempt = 0; attempt < runtime.maxGenerationAttempts; attempt++) {
+    const elapsed = Date.now() - startedAt;
+    const remaining = runtime.totalBudgetMs - elapsed;
+
+    if (remaining < 8_000) {
+      throw new Error(
+        "AI 응답 시간이 초과되었습니다. 일수를 줄이거나 잠시 후 다시 시도해주세요."
+      );
+    }
+
     try {
       const { content, model } = await chatWithFreeModels(messages, {
         jsonMode: true,
-        maxTokens: estimateMaxTokens(request.days),
+        maxTokens: estimateMaxTokens(request.days, runtime.maxTokensCap),
+        timeoutMs: Math.min(runtime.openRouterTimeoutMs, remaining - 2_000),
+        maxModelAttempts: runtime.maxModelAttempts,
       });
 
-      console.info(`[TripMind] 일정 생성 완료 (model: ${model})`);
+      console.info(`[TripMind] 일정 생성 완료 (model: ${model}, ${Date.now() - startedAt}ms)`);
 
       return parseAndValidateItinerary(content, request.budget);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       lastError = err;
 
-      if (!isFormatError(err.message) || attempt === MAX_GENERATION_ATTEMPTS - 1) {
+      if (
+        !isFormatError(err.message) ||
+        attempt === runtime.maxGenerationAttempts - 1
+      ) {
         throw err;
       }
 
       console.warn(
-        `[TripMind] 일정 형식 오류, 다른 모델로 재시도 (${attempt + 1}/${MAX_GENERATION_ATTEMPTS})`
+        `[TripMind] 일정 형식 오류, 재시도 (${attempt + 1}/${runtime.maxGenerationAttempts})`
       );
     }
   }
