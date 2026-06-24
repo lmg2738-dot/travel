@@ -22,6 +22,15 @@ function getMaxDays(): number {
 function mapGenerateError(error: unknown): { message: string; status: number } {
   const message = error instanceof Error ? error.message : String(error);
   const lower = message.toLowerCase();
+  const isSyntaxError =
+    error instanceof SyntaxError || error instanceof Error && error.name === "SyntaxError";
+
+  if (isSyntaxError && lower.includes("json")) {
+    return {
+      message: "요청 형식이 올바르지 않습니다. 입력값을 확인해주세요.",
+      status: 400,
+    };
+  }
 
   if (message.includes("OPENROUTER_API_KEY")) {
     return {
@@ -75,7 +84,8 @@ function mapGenerateError(error: unknown): { message: string; status: number } {
     lower.includes("파싱") ||
     lower.includes("syntaxerror") ||
     lower.includes("unexpected token") ||
-    lower.includes("비어 있습니다")
+    lower.includes("비어 있습니다") ||
+    lower.includes("openrouter api")
   ) {
     return {
       message: "AI 일정 형식 오류입니다. 일수를 줄여 다시 시도해주세요.",
