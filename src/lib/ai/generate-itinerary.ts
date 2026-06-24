@@ -65,13 +65,14 @@ async function loadAihubContext(
   }
 }
 
-function isFormatError(message: string): boolean {
+function isFormatError(error: unknown): boolean {
+  if (error instanceof SyntaxError) return true;
+  const message = error instanceof Error ? error.message : String(error);
   return (
     message.includes("JSON") ||
-    message.includes("형식") ||
     message.includes("파싱") ||
-    message.includes("SyntaxError") ||
-    message.includes("Unexpected token")
+    message.includes("Unexpected token") ||
+    message.includes("Expected")
   );
 }
 
@@ -142,7 +143,7 @@ export async function generateItinerary(
         const err = error instanceof Error ? error : new Error(String(error));
         lastError = err;
 
-        if (isFormatError(err.message) || isRetryableError(err.message)) {
+        if (isFormatError(error) || isRetryableError(err.message)) {
           excludedModels.add(modelId);
           markModelUnavailable(modelId);
           console.warn(

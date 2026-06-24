@@ -107,7 +107,12 @@ function mapGenerateError(error: unknown): { message: string; status: number } {
     };
   }
 
-  if (lower.includes("enoent") || lower.includes("eacces")) {
+  if (
+    lower.includes("저장") ||
+    lower.includes("enoent") ||
+    lower.includes("eacces") ||
+    lower.includes("ebusy")
+  ) {
     return {
       message: "여행 데이터 저장에 실패했습니다. 잠시 후 다시 시도해주세요.",
       status: 500,
@@ -169,6 +174,9 @@ export async function POST(request: Request) {
       budget,
       style,
       itinerary,
+    }).catch((saveError) => {
+      console.error("Trip save error:", saveError);
+      throw new Error("여행 데이터 저장에 실패했습니다.");
     });
 
     return NextResponse.json({ tripId: trip.id });
