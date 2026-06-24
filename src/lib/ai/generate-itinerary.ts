@@ -8,6 +8,9 @@ import { getGenerateRuntimeConfig } from "@/lib/runtime-config";
 const SYSTEM_PROMPT = `당신은 전문 여행 플래너 AI입니다.
 반드시 완전한 JSON만 출력하세요. 마크다운, 설명, 코드블록, 줄임표(...) 금지.
 
+출력 형식 예시:
+{"summary":"3일 서울 여행","days":[{"dayNo":1,"title":"첫날","places":[{"name":"경복궁","description":"조선 궁궐","category":"attraction","lat":37.5796,"lng":126.9770}],"dailyBudget":80000,"tips":["편한 신발"]}],"budget":{"accommodation":200000,"food":150000,"transport":50000,"activities":80000,"shopping":50000,"contingency":70000,"total":600000},"checklist":[{"category":"준비물","items":["여권"]}]}
+
 규칙:
 - summary, days, budget, checklist 필드 필수
 - days 배열 길이는 요청 일수와 동일
@@ -132,6 +135,12 @@ export async function generateItinerary(
       console.warn(
         `[TripMind] 일정 형식 오류, 다른 모델로 재시도 (${attempt + 1}/${runtime.maxGenerationAttempts})`
       );
+
+      messages.push({
+        role: "user",
+        content:
+          "이전 응답이 잘못된 JSON이었습니다. 위 예시 형식과 동일한 완전한 JSON만 다시 출력하세요.",
+      });
     }
   }
 

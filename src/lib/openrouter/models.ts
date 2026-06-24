@@ -22,8 +22,9 @@ export const VERIFIED_FALLBACK_MODEL_IDS = [
 /** Vercel에서는 라우터 대신 검증된 단일 모델만 사용 */
 export const VERCEL_VERIFIED_MODEL_IDS = [
   "openai/gpt-oss-20b:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
   "google/gemma-4-26b-a4b-it:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
+  "google/gemma-4-31b-it:free",
 ];
 
 /** JSON 일정 생성 우선순위 (live 목록과 교차 검증됨) */
