@@ -19,6 +19,90 @@ function getMaxDays(): number {
   return process.env.VERCEL === "1" ? 7 : 30;
 }
 
+function mapGenerateError(error: unknown): { message: string; status: number } {
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+
+  if (message.includes("OPENROUTER_API_KEY")) {
+    return {
+      message: "OpenRouter API 키가 설정되지 않았습니다. Vercel 환경 변수를 확인하세요.",
+      status: 500,
+    };
+  }
+
+  if (
+    lower.includes("http 401") ||
+    lower.includes("http 403") ||
+    lower.includes("unauthorized")
+  ) {
+    return {
+      message: "OpenRouter API 키가 유효하지 않습니다. Vercel 환경 변수를 확인하세요.",
+      status: 500,
+    };
+  }
+
+  if (
+    lower.includes("http 402") ||
+    lower.includes("credit") ||
+    lower.includes("quota")
+  ) {
+    return {
+      message: "OpenRouter 무료 사용 한도에 도달했습니다. 잠시 후 다시 시도해주세요.",
+      status: 503,
+    };
+  }
+
+  if (
+    lower.includes("timeout") ||
+    lower.includes("aborted") ||
+    lower.includes("초과") ||
+    lower.includes("모든 무료 모델") ||
+    lower.includes("provider returned error") ||
+    lower.includes("rate limit") ||
+    lower.includes("http 429") ||
+    lower.includes("http 502") ||
+    lower.includes("http 503")
+  ) {
+    return {
+      message: "AI 서버가 일시적으로 불안정합니다. 1~2분 후 다시 시도해주세요.",
+      status: 504,
+    };
+  }
+
+  if (
+    lower.includes("json") ||
+    lower.includes("형식") ||
+    lower.includes("파싱") ||
+    lower.includes("syntaxerror") ||
+    lower.includes("unexpected token") ||
+    lower.includes("비어 있습니다")
+  ) {
+    return {
+      message: "AI 일정 형식 오류입니다. 일수를 줄여 다시 시도해주세요.",
+      status: 502,
+    };
+  }
+
+  if (lower.includes("사용 가능한 openrouter")) {
+    return {
+      message: "사용 가능한 AI 모델이 없습니다. 잠시 후 다시 시도해주세요.",
+      status: 503,
+    };
+  }
+
+  if (lower.includes("enoent") || lower.includes("eacces")) {
+    return {
+      message: "여행 데이터 저장에 실패했습니다. 잠시 후 다시 시도해주세요.",
+      status: 500,
+    };
+  }
+
+  return {
+    message: "일정 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+    status: 500,
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -73,57 +157,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ tripId: trip.id });
   } catch (error) {
     console.error("Generate trip error:", error);
-
-    const message = error instanceof Error ? error.message : String(error);
-
-    if (message.includes("OPENROUTER_API_KEY")) {
-      return NextResponse.json(
-        { error: "OpenRouter API 키가 설정되지 않았습니다." },
-        { status: 500 }
-      );
-    }
-
-    if (
-      message.includes("OpenRouter API 오류: HTTP 401") ||
-      message.includes("OpenRouter API 오류: HTTP 403")
-    ) {
-      return NextResponse.json(
-        { error: "OpenRouter API 키가 유효하지 않습니다. Vercel 환경 변수를 확인하세요." },
-        { status: 500 }
-      );
-    }
-
-    if (
-      message.includes("timeout") ||
-      message.includes("aborted") ||
-      message.includes("초과") ||
-      message.includes("모든 무료 모델")
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "AI 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.",
-        },
-        { status: 504 }
-      );
-    }
-
-    if (
-      message.includes("JSON") ||
-      message.includes("형식") ||
-      message.includes("파싱") ||
-      message.includes("SyntaxError") ||
-      message.includes("Unexpected token")
-    ) {
-      return NextResponse.json(
-        { error: "AI 일정 형식 오류입니다. 다시 시도해주세요." },
-        { status: 502 }
-      );
-    }
-
-    return NextResponse.json(
-      { error: "일정 생성 중 오류가 발생했습니다." },
-      { status: 500 }
-    );
+    const mapped = mapGenerateError(error);
+    return NextResponse.json({ error: mapped.message }, { status: mapped.status });
   }
 }

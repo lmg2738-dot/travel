@@ -1,16 +1,27 @@
 import type { OpenRouterModel } from "./types";
 
-const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1시간
+function isVercelRuntime(): boolean {
+  return process.env.VERCEL === "1";
+}
 
-/** JSON 일정 생성에 적합한 무료 모델 우선순위 */
-export const PREFERRED_FREE_MODEL_IDS = [
-  "google/gemini-2.0-flash-exp:free",
+const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+const CACHE_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * OpenRouter API로 검증된 무료 모델 (2026-06 기준)
+ * 모델 목록 API 실패 시에만 사용
+ */
+export const VERIFIED_FALLBACK_MODEL_IDS = [
   "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen3-235b-a22b:free",
-  "mistralai/mistral-small-3.1-24b-instruct:free",
   "openai/gpt-oss-20b:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
+  "google/gemma-4-26b-a4b-it:free",
+];
+
+/** JSON 일정 생성 우선순위 (live 목록과 교차 검증됨) */
+export const PREFERRED_FREE_MODEL_IDS = [
+  ...VERIFIED_FALLBACK_MODEL_IDS,
+  "mistralai/mistral-small-3.1-24b-instruct:free",
 ];
 
 const EXCLUDED_MODEL_PATTERNS = [
@@ -25,9 +36,15 @@ const EXCLUDED_MODEL_PATTERNS = [
   /rerank/i,
   /nemotron/i,
   /owl-alpha/i,
+  /code/i,
+  /safety/i,
+  /laguna/i,
+  /liquid\/lfm/i,
+  /fugu/i,
+  /:vl$/i,
+  /vl:free/i,
 ];
 
-/** 런타임 중 사용 불가로 확인된 모델 ID */
 const unavailableModels = new Set<string>();
 
 let cachedFreeModels: OpenRouterModel[] | null = null;
@@ -53,7 +70,6 @@ function preferredRank(modelId: string): number {
   return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
-/** 무료 모델 우선순위: 화이트리스트 → 컨텍스트 길이 */
 function sortFreeModels(models: OpenRouterModel[]): OpenRouterModel[] {
   return [...models].sort((a, b) => {
     const prefDiff = preferredRank(a.id) - preferredRank(b.id);
@@ -72,7 +88,8 @@ export async function fetchFreeModels(): Promise<OpenRouterModel[]> {
   }
 
   const response = await fetch(OPENROUTER_MODELS_URL, {
-    next: { revalidate: 3600 },
+    cache: "no-store",
+    signal: AbortSignal.timeout(isVercelRuntime() ? 6_000 : 10_000),
   });
 
   if (!response.ok) {
@@ -141,6 +158,11 @@ export function isModelUnavailableError(
     "429",
     "503",
     "502",
+    "402",
+    "credit",
+    "quota",
+    "busy",
+    "overloaded",
   ];
 
   return unavailablePatterns.some((p) => msg.includes(p));
@@ -151,7 +173,6 @@ export function clearModelCache(): void {
   cacheExpiresAt = 0;
 }
 
-/** 우선 모델 목록과 실제 사용 가능 모델을 교차 검증 */
 export async function resolvePreferredFreeModelIds(
   preferredIds: string[],
   maxCount: number,
@@ -159,29 +180,37 @@ export async function resolvePreferredFreeModelIds(
 ): Promise<string[]> {
   const exclude = new Set(excludeIds);
 
-  try {
-    const available = await Promise.race([
-      getAvailableFreeModels(),
-      new Promise<OpenRouterModel[]>((_, reject) =>
-        setTimeout(() => reject(new Error("model list timeout")), 4_000)
-      ),
-    ]);
+  if (isVercelRuntime()) {
+    const verified = PREFERRED_FREE_MODEL_IDS.filter((id) => !exclude.has(id));
+    if (verified.length > 0) {
+      return verified.slice(0, maxCount);
+    }
+  }
 
+  try {
+    const available = await getAvailableFreeModels();
     const availableIds = new Set(available.map((model) => model.id));
-    const matched = preferredIds.filter(
+
+    const matchedPreferred = preferredIds.filter(
       (id) => availableIds.has(id) && !exclude.has(id)
     );
-
-    if (matched.length > 0) {
-      return matched.slice(0, maxCount);
+    if (matchedPreferred.length > 0) {
+      return matchedPreferred.slice(0, maxCount);
     }
 
-    return available
+    const liveModels = available
       .map((model) => model.id)
-      .filter((id) => !exclude.has(id))
-      .slice(0, maxCount);
+      .filter((id) => !exclude.has(id));
+
+    if (liveModels.length > 0) {
+      return liveModels.slice(0, maxCount);
+    }
   } catch (error) {
-    console.warn("[OpenRouter] 모델 목록 조회 실패, 기본 목록 사용:", error);
-    return preferredIds.filter((id) => !exclude.has(id)).slice(0, maxCount);
+    console.warn("[OpenRouter] 모델 목록 조회 실패, 검증된 fallback 사용:", error);
   }
+
+  return VERIFIED_FALLBACK_MODEL_IDS.filter((id) => !exclude.has(id)).slice(
+    0,
+    maxCount
+  );
 }
