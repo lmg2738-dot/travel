@@ -194,7 +194,7 @@ export async function POST(request: Request) {
       throw new Error("여행 데이터 저장에 실패했습니다.");
     });
 
-    return NextResponse.json({ tripId: trip.id });
+    return NextResponse.json({ tripId: trip.id, trip });
   } catch (error) {
     console.error("Generate trip error:", error);
     const mapped = mapGenerateError(error);

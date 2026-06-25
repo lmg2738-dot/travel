@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { TravelStyle } from "@/types/trip";
+import type { StoredTrip } from "@/lib/db/trips";
+import { saveTripToClientCache } from "@/lib/trip-client-cache";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   Sparkles,
@@ -69,6 +71,19 @@ export function TripForm() {
         const data = await response.json();
 
         if (response.ok) {
+          if (data.trip) {
+            const trip = data.trip as StoredTrip;
+            saveTripToClientCache(trip);
+            try {
+              await fetch("/api/trips", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(trip),
+              });
+            } catch {
+              // Blob 미설정 시에도 클라이언트 캐시로 표시
+            }
+          }
           router.push(`/trips/${data.tripId}`);
           return;
         }

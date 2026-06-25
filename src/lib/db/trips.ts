@@ -8,6 +8,14 @@ import type {
   GeneratedItinerary,
 } from "@/types/trip";
 import { isVercelRuntime } from "@/lib/runtime-config";
+import {
+  blobStorageEnabled,
+  BLOB_INDEX_PATH,
+  deleteBlob,
+  readBlobJson,
+  tripBlobPath,
+  writeBlobJson,
+} from "@/lib/db/trip-blob";
 
 const DATA_DIR = isVercelRuntime()
   ? path.join("/tmp", "tripmind", "trips")
@@ -71,6 +79,10 @@ function toSummary(trip: StoredTrip): TripSummary {
 }
 
 async function readIndex(): Promise<TripIndex | null> {
+  if (blobStorageEnabled()) {
+    return readBlobJson<TripIndex>(BLOB_INDEX_PATH);
+  }
+
   try {
     const content = await fs.readFile(INDEX_FILE, "utf-8");
     return JSON.parse(content) as TripIndex;
@@ -80,11 +92,21 @@ async function readIndex(): Promise<TripIndex | null> {
 }
 
 async function writeIndex(index: TripIndex): Promise<void> {
+  if (blobStorageEnabled()) {
+    await writeBlobJson(BLOB_INDEX_PATH, index);
+    return;
+  }
+
   await ensureDataDir();
   await fs.writeFile(INDEX_FILE, JSON.stringify(index), "utf-8");
 }
 
 async function rebuildIndex(): Promise<TripIndex> {
+  if (blobStorageEnabled()) {
+    const index = await readIndex();
+    return index ?? { shareTokens: {}, summaries: [] };
+  }
+
   await ensureDataDir();
   const files = await fs.readdir(DATA_DIR);
   const tripFiles = files.filter(isTripFile);
@@ -188,6 +210,10 @@ export async function listTrips(): Promise<StoredTrip[]> {
 }
 
 export async function getTripById(id: string): Promise<StoredTrip | null> {
+  if (blobStorageEnabled()) {
+    return readBlobJson<StoredTrip>(tripBlobPath(id));
+  }
+
   try {
     const content = await fs.readFile(tripFilePath(id), "utf-8");
     return JSON.parse(content) as StoredTrip;
@@ -216,6 +242,22 @@ export async function getTripByShareToken(
 }
 
 export async function saveTrip(trip: StoredTrip): Promise<StoredTrip> {
+  if (blobStorageEnabled()) {
+    await writeBlobJson(tripBlobPath(trip.id), trip);
+    await syncIndexWithTrip(trip);
+    return trip;
+  }
+
+  if (isVercelRuntime()) {
+    try {
+      await ensureDataDir();
+      await fs.writeFile(tripFilePath(trip.id), JSON.stringify(trip), "utf-8");
+    } catch (error) {
+      console.warn("[TripMind] Vercel /tmp 저장 실패:", error);
+    }
+    return trip;
+  }
+
   await ensureDataDir();
   await fs.writeFile(tripFilePath(trip.id), JSON.stringify(trip), "utf-8");
   await syncIndexWithTrip(trip);
@@ -253,7 +295,11 @@ export async function createTrip(input: CreateTripInput): Promise<StoredTrip> {
 export async function deleteTrip(id: string): Promise<boolean> {
   const trip = await getTripById(id);
   try {
-    await fs.unlink(tripFilePath(id));
+    if (blobStorageEnabled()) {
+      await deleteBlob(tripBlobPath(id));
+    } else {
+      await fs.unlink(tripFilePath(id));
+    }
     await removeTripFromIndex(id, trip?.share_token);
     return true;
   } catch {
