@@ -18,10 +18,10 @@ export function getGenerateRuntimeConfig(): GenerateRuntimeConfig {
   if (isVercelRuntime()) {
     return {
       skipAihub: true,
-      openRouterTimeoutMs: 42_000,
-      maxModelAttempts: 2,
+      openRouterTimeoutMs: 28_000,
+      maxModelAttempts: 6,
       maxGenerationAttempts: 1,
-      maxTokensCap: 2_400,
+      maxTokensCap: 2_000,
       useFastModelList: true,
       totalBudgetMs: 55_000,
     };
@@ -29,11 +29,11 @@ export function getGenerateRuntimeConfig(): GenerateRuntimeConfig {
 
   return {
     skipAihub: false,
-    openRouterTimeoutMs: 50_000,
-    maxModelAttempts: 5,
-    maxGenerationAttempts: 3,
-    maxTokensCap: 6_000,
+    openRouterTimeoutMs: 45_000,
+    maxModelAttempts: 8,
+    maxGenerationAttempts: 2,
+    maxTokensCap: 5_000,
     useFastModelList: false,
-    totalBudgetMs: 120_000,
+    totalBudgetMs: 150_000,
   };
 }

@@ -9,22 +9,21 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 
 /**
  * OpenRouter API로 검증된 무료 모델 (2026-06 기준)
- * 모델 목록 API 실패 시에만 사용
+ * 빠른·가벼운 모델 우선 → JSON 일정 생성에 적합한 순
  */
 export const VERIFIED_FALLBACK_MODEL_IDS = [
-  "openai/gpt-oss-120b:free",
   "openai/gpt-oss-20b:free",
+  "meta-llama/llama-3.2-3b-instruct:free",
   "qwen/qwen3-next-80b-a3b-instruct:free",
   "google/gemma-4-26b-a4b-it:free",
   "meta-llama/llama-3.3-70b-instruct:free",
+  "openai/gpt-oss-120b:free",
+  "nousresearch/hermes-3-llama-3.1-405b:free",
   "openrouter/free",
 ];
 
-/** Vercel: 안정 모델 2개만 (호출·한도 절약) */
-export const VERCEL_STATIC_MODEL_IDS = [
-  "openai/gpt-oss-120b:free",
-  "openrouter/free",
-];
+/** Vercel: 정적 fallback (라이브 API 실패 시) */
+export const VERCEL_STATIC_MODEL_IDS = [...VERIFIED_FALLBACK_MODEL_IDS];
 
 /** @deprecated VERCEL_STATIC_MODEL_IDS 사용 */
 export const VERCEL_VERIFIED_MODEL_IDS = VERCEL_STATIC_MODEL_IDS;
@@ -47,13 +46,13 @@ const EXCLUDED_MODEL_PATTERNS = [
   /code/i,
   /safety/i,
   /laguna/i,
-  /liquid\/lfm/i,
   /fugu/i,
   /:vl$/i,
   /vl:free/i,
 ];
 
 const unavailableModels = new Set<string>();
+let lastSuccessfulModelId: string | null = null;
 
 let cachedFreeModels: OpenRouterModel[] | null = null;
 let cacheExpiresAt = 0;
@@ -137,13 +136,34 @@ export function markModelUnavailable(modelId: string): void {
   }
 }
 
+export const OPENROUTER_QUOTA_USER_MESSAGE =
+  "OpenRouter 무료 사용 한도에 도달했습니다. 내일 다시 시도하거나 OpenRouter에 크레딧을 추가해주세요.";
+
+export function rememberSuccessfulModel(modelId: string): void {
+  lastSuccessfulModelId = modelId;
+}
+
 export function isOpenRouterQuotaExhausted(message: string): boolean {
   const lower = message.toLowerCase();
+
+  // 분당 한도는 다른 모델로 우회 가능
+  if (
+    lower.includes("free-models-per-min") ||
+    lower.includes("per-min") ||
+    lower.includes("per minute")
+  ) {
+    return false;
+  }
+
   return (
+    message.includes("무료 사용 한도") ||
+    message.includes("한도에 도달") ||
     lower.includes("free-models-per-day") ||
     lower.includes("http 402") ||
+    lower.includes("insufficient credits") ||
     (lower.includes("rate limit") && lower.includes("per-day")) ||
-    (lower.includes("credit") && lower.includes("unlock"))
+    (lower.includes("credit") &&
+      (lower.includes("unlock") || lower.includes("add")))
   );
 }
 
@@ -209,43 +229,49 @@ export async function resolvePreferredFreeModelIds(
 ): Promise<string[]> {
   const exclude = new Set(excludeIds);
 
-  if (isVercelRuntime()) {
-    const staticModels = [
-      ...new Set([...VERCEL_STATIC_MODEL_IDS, ...VERIFIED_FALLBACK_MODEL_IDS]),
-    ].filter((id) => !exclude.has(id));
-    if (staticModels.length > 0) {
-      return staticModels.slice(0, maxCount);
-    }
-  }
+  const preferredPool = isVercelRuntime()
+    ? [...VERCEL_STATIC_MODEL_IDS, ...VERIFIED_FALLBACK_MODEL_IDS]
+    : preferredIds;
+
+  const orderedPreferred = [
+    ...(lastSuccessfulModelId &&
+    !exclude.has(lastSuccessfulModelId) &&
+    preferredPool.includes(lastSuccessfulModelId)
+      ? [lastSuccessfulModelId]
+      : []),
+    ...preferredPool.filter((id) => id !== lastSuccessfulModelId),
+  ];
 
   try {
     const available = await getAvailableFreeModels();
     const availableIds = new Set(available.map((model) => model.id));
 
-    const preferredPool = isVercelRuntime()
-      ? [...VERCEL_STATIC_MODEL_IDS, ...VERIFIED_FALLBACK_MODEL_IDS]
-      : preferredIds;
-
-    const matchedPreferred = preferredPool.filter(
+    const matchedPreferred = orderedPreferred.filter(
       (id) => availableIds.has(id) && !exclude.has(id)
     );
-    if (matchedPreferred.length > 0) {
-      return [...new Set(matchedPreferred)].slice(0, maxCount);
-    }
 
-    const liveModels = available
+    const extraLive = available
       .map((model) => model.id)
-      .filter((id) => !exclude.has(id));
+      .filter(
+        (id) =>
+          !exclude.has(id) &&
+          !matchedPreferred.includes(id) &&
+          !id.includes("nemotron") &&
+          !id.includes("owl-alpha") &&
+          !id.includes("coder") &&
+          !id.includes("laguna") &&
+          !id.includes("lyria")
+      );
 
-    if (liveModels.length > 0) {
-      return liveModels.slice(0, maxCount);
+    const combined = [...new Set([...matchedPreferred, ...extraLive])];
+    if (combined.length > 0) {
+      return combined.slice(0, maxCount);
     }
   } catch (error) {
     console.warn("[OpenRouter] 모델 목록 조회 실패, 검증된 fallback 사용:", error);
   }
 
-  return VERIFIED_FALLBACK_MODEL_IDS.filter((id) => !exclude.has(id)).slice(
-    0,
-    maxCount
-  );
+  return [...new Set(orderedPreferred)]
+    .filter((id) => !exclude.has(id))
+    .slice(0, maxCount);
 }

@@ -5,7 +5,9 @@ import {
   markModelUnavailable,
   isModelUnavailableError,
   isOpenRouterQuotaExhausted,
+  OPENROUTER_QUOTA_USER_MESSAGE,
   isOpenRouterRateLimited,
+  rememberSuccessfulModel,
   resolvePreferredFreeModelIds,
   PREFERRED_FREE_MODEL_IDS,
 } from "@/lib/openrouter/models";
@@ -62,6 +64,21 @@ function estimateMaxTokens(days: number, cap: number): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getModelTimeoutMs(
+  modelTry: number,
+  remainingMs: number,
+  baseTimeoutMs: number
+): number {
+  const reserveMs = modelTry === 0 ? 5_000 : 2_500;
+  const cap =
+    modelTry === 0
+      ? baseTimeoutMs
+      : modelTry < 3
+        ? 12_000
+        : 9_000;
+  return Math.max(6_000, Math.min(cap, remainingMs - reserveMs));
 }
 
 async function loadAihubContext(
@@ -122,42 +139,35 @@ export async function generateItinerary(
   ];
 
   let lastError: Error | null = null;
+  let quotaHits = 0;
   const maxModelTries = runtime.maxModelAttempts;
 
   for (let attempt = 0; attempt < runtime.maxGenerationAttempts; attempt++) {
-    const elapsed = Date.now() - startedAt;
-    const remaining = runtime.totalBudgetMs - elapsed;
+    for (let modelTry = 0; modelTry < maxModelTries; modelTry++) {
+      const elapsed = Date.now() - startedAt;
+      const remaining = runtime.totalBudgetMs - elapsed;
 
-    if (remaining < 8_000) {
-      throw new Error(
-        "AI 응답 시간이 초과되었습니다. 일수를 줄이거나 잠시 후 다시 시도해주세요."
+      if (remaining < 6_000) break;
+
+      const modelIds = await resolvePreferredFreeModelIds(
+        PREFERRED_FREE_MODEL_IDS,
+        1,
+        [...excludedModels]
       );
-    }
+      const modelId = modelIds[0];
+      if (!modelId) break;
 
-    const modelIds = await resolvePreferredFreeModelIds(
-      PREFERRED_FREE_MODEL_IDS,
-      maxModelTries,
-      [...excludedModels]
-    );
-
-    for (let modelIndex = 0; modelIndex < modelIds.length; modelIndex++) {
-      const modelId = modelIds[modelIndex];
-      if (excludedModels.has(modelId)) continue;
-
-      const elapsedNow = Date.now() - startedAt;
-      const remainingNow = runtime.totalBudgetMs - elapsedNow;
-      if (remainingNow < 5_000) break;
-
-      const timeoutMs =
-        modelIndex === 0
-          ? Math.min(runtime.openRouterTimeoutMs, remainingNow - 4_000)
-          : Math.min(remainingNow - 2_000, 15_000);
+      const timeoutMs = getModelTimeoutMs(
+        modelTry,
+        remaining,
+        runtime.openRouterTimeoutMs
+      );
 
       try {
         const { content, model } = await chatWithModel(modelId, messages, {
           jsonMode: false,
           maxTokens: estimateMaxTokens(request.days, runtime.maxTokensCap),
-          timeoutMs: Math.max(timeoutMs, 8_000),
+          timeoutMs,
         });
 
         const itinerary = parseAndValidateItinerary(
@@ -166,6 +176,7 @@ export async function generateItinerary(
           request.days
         );
 
+        rememberSuccessfulModel(model);
         console.info(
           `[TripMind] 일정 생성 완료 (model: ${model}, ${Date.now() - startedAt}ms)`
         );
@@ -174,21 +185,23 @@ export async function generateItinerary(
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         lastError = err;
+        excludedModels.add(modelId);
 
         if (isOpenRouterQuotaExhausted(err.message)) {
-          throw new Error(
-            "OpenRouter 무료 사용 한도에 도달했습니다. 내일 다시 시도하거나 OpenRouter에 크레딧을 추가해주세요."
+          quotaHits += 1;
+          console.warn(
+            `[TripMind] 모델 ${modelId} 일일 한도, 다음 모델 시도: ${err.message}`
           );
+          continue;
         }
 
         if (isFormatError(error) || isRetryableError(err.message)) {
-          excludedModels.add(modelId);
           markModelUnavailable(modelId);
           console.warn(
             `[TripMind] 모델 ${modelId} 실패, 다음 모델 시도: ${err.message}`
           );
           if (isOpenRouterRateLimited(err.message)) {
-            await sleep(1_500);
+            await sleep(modelTry < 2 ? 1_200 : 2_000);
           }
           continue;
         }
@@ -203,6 +216,14 @@ export async function generateItinerary(
         content: `이전 응답이 잘못되었습니다. days 배열을 정확히 ${request.days}개 포함한 완전한 JSON만 다시 출력하세요.`,
       });
     }
+  }
+
+  if (
+    quotaHits > 0 &&
+    (isOpenRouterQuotaExhausted(lastError?.message ?? "") ||
+      quotaHits >= Math.max(2, Math.ceil(maxModelTries / 2)))
+  ) {
+    throw new Error(OPENROUTER_QUOTA_USER_MESSAGE);
   }
 
   throw (

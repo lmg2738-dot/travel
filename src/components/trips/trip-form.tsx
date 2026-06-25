@@ -58,7 +58,9 @@ export function TripForm() {
       startDate: startDate || undefined,
     };
 
-    const maxAttempts = 3;
+    const maxAttempts = 4;
+    const quotaMessage =
+      "OpenRouter 무료 사용 한도에 도달했습니다. 내일 다시 시도하거나 OpenRouter에 크레딧을 추가해주세요.";
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -88,17 +90,28 @@ export function TripForm() {
           return;
         }
 
+        const errorText = data.error ?? "일정 생성에 실패했습니다.";
+
+        if (
+          errorText.includes("무료 사용 한도") ||
+          errorText.includes("한도에 도달")
+        ) {
+          setError(quotaMessage);
+          setLoading(false);
+          return;
+        }
+
         const retryable =
           response.status === 504 ||
           response.status === 503 ||
           response.status === 502;
 
         if (retryable && attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, 2_000 * attempt));
+          await new Promise((r) => setTimeout(r, 2_500 * attempt));
           continue;
         }
 
-        setError(data.error ?? "일정 생성에 실패했습니다.");
+        setError(errorText);
         setLoading(false);
         return;
       } catch {

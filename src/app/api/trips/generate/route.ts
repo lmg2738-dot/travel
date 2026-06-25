@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateItinerary } from "@/lib/ai/generate-itinerary";
 import { createTrip } from "@/lib/db/trips";
+import {
+  isOpenRouterQuotaExhausted,
+  OPENROUTER_QUOTA_USER_MESSAGE,
+} from "@/lib/openrouter/models";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -54,15 +58,9 @@ function mapGenerateError(error: unknown): { message: string; status: number } {
     };
   }
 
-  if (
-    lower.includes("http 402") ||
-    lower.includes("credit") ||
-    lower.includes("quota") ||
-    lower.includes("free-models-per-day")
-  ) {
+  if (isOpenRouterQuotaExhausted(message)) {
     return {
-      message:
-        "OpenRouter 무료 사용 한도에 도달했습니다. 내일 다시 시도하거나 OpenRouter에 크레딧을 추가해주세요.",
+      message: OPENROUTER_QUOTA_USER_MESSAGE,
       status: 503,
     };
   }
