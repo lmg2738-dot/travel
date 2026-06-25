@@ -115,13 +115,13 @@ export function TripForm() {
 
   return (
     <Card>
-      <CardHeader className="bg-gradient-to-br from-[var(--navy)] to-[var(--navy-soft)] text-white">
+      <CardHeader className="section-hero-panel rounded-t-[var(--radius-lg)]">
         <div className="flex items-start justify-between gap-4">
           <div>
             <Badge className="mb-3 border-0 bg-white/15 text-[var(--accent-on-dark)] ring-white/25">
               AI Planner
             </Badge>
-            <h2 className="font-[family-name:var(--font-display)] text-2xl font-semibold sm:text-3xl">
+            <h2 className="hero-title font-[family-name:var(--font-display)] text-2xl font-semibold sm:text-3xl">
               여행 일정 만들기
             </h2>
             <p className="mt-2 text-sm text-on-dark-muted">

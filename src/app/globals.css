@@ -86,20 +86,109 @@ body {
 .animate-fade-up-delay-2 { animation-delay: 0.2s; opacity: 0; }
 .animate-fade-up-delay-3 { animation-delay: 0.3s; opacity: 0; }
 
+.text-on-dark-muted {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.text-on-dark-subtle {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+@layer components {
+  .section-hero {
+    background-color: #0c1222;
+    background-image: linear-gradient(
+      160deg,
+      #0c1222 0%,
+      #151d2e 45%,
+      #1a2744 100%
+    );
+    color: #ffffff;
+  }
+
+  .section-hero-panel {
+    background-color: #0c1222;
+    background-image: linear-gradient(
+      135deg,
+      #0c1222 0%,
+      #151d2e 100%
+    );
+    color: #ffffff;
+  }
+
+  .section-hero .text-on-dark-muted {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .section-hero .text-on-dark-subtle,
+  .section-hero-panel .text-on-dark-subtle {
+    color: rgba(255, 255, 255, 0.78);
+  }
+
+  .section-hero .hero-title {
+    color: #ffffff;
+  }
+
+  .section-hero .text-gradient-gold,
+  .section-hero-panel .text-gradient-gold {
+    color: #f0e4cc;
+    background: linear-gradient(135deg, #f5ead6 0%, #e8d5b5 45%, #d4bc96 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .section-hero-panel .hero-title {
+    color: #ffffff;
+  }
+
+  .section-hero-panel .text-on-dark-muted {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .section-hero .hero-outline-btn {
+    border-color: rgba(255, 255, 255, 0.35) !important;
+    background-color: rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
+  }
+
+  .section-hero .hero-outline-btn:hover {
+    border-color: rgba(255, 255, 255, 0.55) !important;
+    background-color: rgba(255, 255, 255, 0.18) !important;
+    color: #ffffff !important;
+  }
+}
+
+/* legacy aliases – avoid Tailwind bg-hero utility collision */
+.bg-hero {
+  background-color: #0c1222;
+  background-image: linear-gradient(
+    160deg,
+    #0c1222 0%,
+    #151d2e 45%,
+    #1a2744 100%
+  );
+  color: #ffffff;
+}
+
+.bg-hero-panel {
+  background-color: #0c1222;
+  background-image: linear-gradient(135deg, #0c1222 0%, #151d2e 100%);
+  color: #ffffff;
+}
+
 .text-gradient-gold {
-  color: #e8d5b5;
+  color: var(--accent-dark);
   background: var(--gold-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-.text-on-dark-muted {
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.text-on-dark-subtle {
-  color: rgba(255, 255, 255, 0.68);
+@supports (background-clip: text) {
+  .text-gradient-gold {
+    color: transparent;
+  }
 }
 
 .glass {

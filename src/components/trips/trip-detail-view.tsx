@@ -22,7 +22,7 @@ export function TripDetailView({ trip }: TripDetailViewProps) {
     <div className="flex min-h-full flex-col">
       <Header />
 
-      <section className="relative overflow-hidden bg-[var(--hero-gradient)] px-4 py-12 text-white sm:px-6 sm:py-16">
+      <section className="section-hero relative overflow-hidden px-4 py-12 sm:px-6 sm:py-16">
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -right-20 top-0 h-64 w-64 rounded-full bg-[var(--accent)]/10 blur-3xl" />
         </div>
@@ -30,7 +30,7 @@ export function TripDetailView({ trip }: TripDetailViewProps) {
         <div className="relative mx-auto max-w-4xl">
           <Link
             href="/dashboard"
-            className="mb-6 inline-flex items-center gap-2 text-sm text-on-dark-subtle transition-colors hover:text-white"
+            className="mb-6 inline-flex items-center gap-2 text-sm text-on-dark-subtle transition-colors hover:text-[var(--accent-on-dark)]"
           >
             <ArrowLeft className="h-4 w-4" />
             내 여행으로
@@ -51,7 +51,7 @@ export function TripDetailView({ trip }: TripDetailViewProps) {
 
               <div className="mb-3 flex items-center gap-3">
                 <MapPin className="h-7 w-7 text-[var(--accent-on-dark)]" />
-                <h1 className="font-[family-name:var(--font-display)] text-4xl font-semibold sm:text-5xl">
+                <h1 className="hero-title font-[family-name:var(--font-display)] text-4xl font-semibold sm:text-5xl">
                   {trip.destination}
                 </h1>
               </div>

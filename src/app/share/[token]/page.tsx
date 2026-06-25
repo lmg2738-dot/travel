@@ -58,7 +58,7 @@ export default async function SharePage({ params }: SharePageProps) {
     <div className="flex min-h-full flex-col">
       <Header />
 
-      <section className="relative overflow-hidden bg-[var(--hero-gradient)] px-4 py-12 text-white sm:px-6 sm:py-14">
+      <section className="section-hero relative overflow-hidden px-4 py-12 sm:px-6 sm:py-14">
         <div className="relative mx-auto max-w-4xl">
           <Badge className="mb-4 border-0 bg-white/15 text-[var(--accent-on-dark)] ring-white/25">
             <Share2 className="mr-1.5 h-3 w-3" />
@@ -67,7 +67,7 @@ export default async function SharePage({ params }: SharePageProps) {
 
           <div className="mb-3 flex items-center gap-3">
             <MapPin className="h-7 w-7 text-[var(--accent-on-dark)]" />
-            <h1 className="font-[family-name:var(--font-display)] text-4xl font-semibold sm:text-5xl">
+            <h1 className="hero-title font-[family-name:var(--font-display)] text-4xl font-semibold sm:text-5xl">
               {trip.destination}
             </h1>
           </div>

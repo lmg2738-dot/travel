@@ -78,7 +78,7 @@ export default function HomePage() {
 
       <main className="flex-1">
         {/* Hero */}
-        <section className="relative overflow-hidden bg-[var(--hero-gradient)] px-4 pb-24 pt-16 text-white sm:px-6 sm:pb-32 sm:pt-24">
+        <section className="section-hero relative overflow-hidden px-4 pb-24 pt-16 sm:px-6 sm:pb-32 sm:pt-24">
           <div className="pointer-events-none absolute inset-0">
             <div className="absolute -left-32 top-0 h-96 w-96 rounded-full bg-[var(--accent)]/10 blur-3xl" />
             <div className="absolute -right-32 bottom-0 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
@@ -100,7 +100,7 @@ export default function HomePage() {
               AI HUB × OpenRouter
             </Badge>
 
-            <h1 className="animate-fade-up animate-fade-up-delay-1 font-[family-name:var(--font-display)] text-5xl font-semibold leading-[1.1] tracking-tight sm:text-6xl lg:text-7xl">
+            <h1 className="hero-title animate-fade-up animate-fade-up-delay-1 font-[family-name:var(--font-display)] text-5xl font-semibold leading-[1.1] tracking-tight sm:text-6xl lg:text-7xl">
               당신만의
               <br />
               <span className="text-gradient-gold">프리미엄 여행</span>
@@ -124,7 +124,7 @@ export default function HomePage() {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="min-w-[200px] border-white/30 bg-white/10 text-white hover:border-white/50 hover:bg-white/15"
+                  className="hero-outline-btn min-w-[200px]"
                 >
                   저장된 여행 보기
                 </Button>
